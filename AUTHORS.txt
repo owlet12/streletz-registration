@@ -1,0 +1,9 @@
+Автор проекта: owlet
+Профиль: https://github.com/owlet12
+Copyright (c) 2026 owlet
+
+Указание относится к собственному коду Android-приложения, Windows-моста,
+модуля связи с Master и сопутствующим тестам этого проекта.
+Сторонние библиотеки сохраняют исходное авторство и свои лицензии.
+niimbluelib: Copyright (c) 2024 MultiMote (MIT).
+Полные уведомления: android/app/src/main/assets/label-print/THIRD-PARTY-NOTICES.txt.

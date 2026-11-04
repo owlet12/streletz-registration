@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>StreletzBridge.CoreTests</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>BRIDGE_CORE_TESTS</DefineConstants>
+    <OutputPath>bin/core-tests/</OutputPath>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="ProtocolV3.cs" />
+    <Compile Include="HttpGateway.cs" />
+    <Compile Include="HttpGatewaySettings.cs" />
+    <Compile Include="HttpGatewaySelfTests.cs" />
+    <Compile Include="PanelProfiles.cs" />
+    <Compile Include="RegistrationCoordinator.cs" />
+    <Compile Include="RegistrationDiagnosticData.cs" />
+    <Compile Include="PanelRegistrationDriver.cs" />
+    <Compile Include="ProjectPanelCatalog.cs" />
+    <Compile Include="BfxPanelCatalog.cs" />
+    <Compile Include="BfxProjectUpdate.cs" />
+    <Compile Include="ProjectSyncSnapshot.cs" />
+    <Compile Include="PanelRouteMetadata.cs" />
+    <Compile Include="PanelDiagnosticsSelfTests.cs" />
+    <Compile Include="RegistrationRecoverySelfTests.cs" />
+    <Compile Include="BfxProjectUpdateSelfTests.cs" />
+    <Compile Include="BridgeProtocolTests.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Fixtures/project.json" Link="Fixtures/project.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

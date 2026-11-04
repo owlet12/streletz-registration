@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>ProjectSyncProbe</AssemblyName>
+    <LangVersion>7.3</LangVersion>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <BridgeAssemblyPath Condition="'$(BridgeAssemblyPath)' == ''">../../windows-bridge/bin/Release/net48/StreletzBridge.exe</BridgeAssemblyPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net48" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="StreletzBridge"><HintPath>$(BridgeAssemblyPath)</HintPath><Private>true</Private></Reference>
+  </ItemGroup>
+  <Target Name="RequireBuiltBridge" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(BridgeAssemblyPath)')" Text="Build the production bridge first, or pass BridgeAssemblyPath." />
+  </Target>
+</Project>

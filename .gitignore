@@ -1,0 +1,30 @@
+# Build products and local configuration
+**/bin/
+**/obj/
+**/build/
+**/.gradle/
+**/.idea/
+**/.kotlin/
+**/local.properties
+node_modules/
+*.apk
+*.exe
+*.dll
+*.pdb
+*.log
+print-preview-test.png
+tmp/
+# Credentials and installation data
+.env*
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.pem
+*password*.txt
+*.pcap
+*.pcapng
+*.etl
+*.bfx
+*.fb3
+*.s3project

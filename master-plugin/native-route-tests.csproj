@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>NativeRoute.SelfTest</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <OutputPath>bin/native-route-tests/</OutputPath>
+    <LangVersion>7.3</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net48" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Windows.Forms" />
+    <Compile Include="Contracts.cs" />
+    <Compile Include="NativeRoutePolicy.cs" />
+    <Compile Include="NativeAdapterDiagnostic.cs" />
+    <Compile Include="tests/NativeRouteSelfTest.cs" />
+  </ItemGroup>
+</Project>

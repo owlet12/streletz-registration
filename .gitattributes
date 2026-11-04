@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.cmd text eol=crlf
+android/app/src/main/assets/label-print/niimbluelib-0.48.0.min.js -text
+android/app/src/main/assets/label-print/niimbluelib-LICENSE.txt -text
+android/app/src/main/assets/label-print/THIRD-PARTY-NOTICES.txt -text -diff
