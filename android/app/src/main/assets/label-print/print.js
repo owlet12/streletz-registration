@@ -4,7 +4,8 @@
 const $=id=>document.getElementById(id),lib=niimbluelib,core=LabelPrintCore;
 let sequence=0,client=null,busy=false,printing=false,unknown=false,prepared=null,detected=null,job=0;
 const pending=new Map();
-const isWp=()=>$('profile').value==='wp9529';
+const isWp=()=>['wp9529','wp9539'].includes($('profile').value);
+const wpProfile=()=>WP9529.profile($('profile').value);
 function rpc(action,payload=''){return new Promise((resolve,reject)=>{const id=++sequence;const timer=setTimeout(()=>{pending.delete(id);reject(Error('Телефон не завершил операцию Bluetooth'));},action==='write'?7000:40000);pending.set(id,{resolve,reject,timer});LabelNative.request(id,action,payload);});}
 window.nativeReply=(id,error,result)=>{const item=pending.get(id);if(!item)return;pending.delete(id);clearTimeout(item.timer);error?item.reject(Error(error)):item.resolve(result);};
 function bytes(value){return Uint8Array.from(atob(value),c=>c.charCodeAt(0));}
@@ -22,17 +23,17 @@ class AndroidClient extends lib.NiimbotAbstractClient {
  });}
 }
 class WPClient {
- constructor(){this.connected=false;this.maxPayload=20;this.driver=new WP9529.Driver(this);}
+ constructor(id){this.profile=id;this.model=WP9529.profile(id);this.connected=false;this.maxPayload=20;this.driver=new WP9529.Driver(this,{profile:id});}
  async connect(address){const result=await rpc('connect',address);
-  if(result.profile!=='wp9529'||!result.name?.startsWith('9529#')||!Number.isInteger(result.maxPayload)||result.maxPayload<20)throw Error('Подключение не соответствует выбранному WP9529.');
+  if(result.profile!==this.profile||!WP9529.matches(this.profile,result.name)||!Number.isInteger(result.maxPayload)||result.maxPayload<20)throw Error('Подключение не соответствует выбранному '+this.model.name+'.');
   this.maxPayload=result.maxPayload;this.connected=true;return this.driver.probe();
  }
  async write(data){await rpc('write',btoa(String.fromCharCode(...data)));}
- async disconnect(){this.connected=false;this.driver.stop(Error('Связь с WP9529 закрыта.'));await rpc('disconnect');}
+ async disconnect(){this.connected=false;this.driver.stop(Error('Связь с VSON закрыта.'));await rpc('disconnect');}
  processRawPacket(data){this.driver.receive(data);}
 }
 window.onBleData=value=>{if(client?.connected)try{client.processRawPacket(bytes(value));}catch(e){status('Некорректный ответ принтера: '+e.message);}};
-window.onBleDisconnected=()=>{if(client){client.connected=false;if(client instanceof WPClient)client.driver.stop(Error('Связь с WP9529 потеряна.'));else client.emit('disconnect',new lib.DisconnectEvent());}detected=null;if(printing||unknown){unknown=true;status('Связь потеряна. Результат печати не подтверждён. Проверьте этикетку.');}else status('Принтер отключён.');controls();};
+window.onBleDisconnected=()=>{if(client){client.connected=false;if(client instanceof WPClient)client.driver.stop(Error('Связь с VSON потеряна.'));else client.emit('disconnect',new lib.DisconnectEvent());}detected=null;if(printing||unknown){unknown=true;status('Связь потеряна. Результат печати не подтверждён. Проверьте этикетку.');}else status('Принтер отключён.');controls();};
 function status(value){$('status').textContent=value;}
 function controls(){for(const id of ['profile','width','height','copies','rotation','paper','gap','density','scan','devices','connect'])$(id).disabled=busy||printing;$('connect').disabled=busy||printing||!$('devices').value;$('print').disabled=busy||printing||unknown||!prepared||!detected||!client?.connected;$('review').hidden=!unknown;$('review').disabled=printing||busy;$('height').disabled=busy||printing||isWp();$('gap').disabled=busy||printing||$('paper').value==='continuous';}
 function paint(){prepared=null;try{
@@ -55,17 +56,17 @@ for(const id of ['width','height','copies','rotation','paper','gap','density'])$
 $('devices').onchange=controls;
 function profileUi(){
  $('wpMedia').hidden=!isWp();if(isWp())$('height').value='12';
- $('profileNote').textContent=isWp()?'WP9529 · Bluetooth LE · 12 мм · профиль прошивки V50. Закройте iLabel и отключите его от принтера перед подключением.':'NIIMBOT D110 · Bluetooth · этикетка 12×30 мм по умолчанию';
+ $('profileNote').textContent=isWp()?wpProfile().name+' · Bluetooth LE · 12 мм · профиль '+wpProfile().firmware+'. '+(wpProfile().id==='wp9539'?'Первая печать требует проверки на принтере. ':'')+'Закройте iLabel перед подключением.':'NIIMBOT D110 · Bluetooth · этикетка 12×30 мм по умолчанию';
  paint();
 }
 $('profile').onchange=async()=>{busy=true;controls();try{await client?.disconnect();}catch{}finally{client=null;detected=null;$('devices').replaceChildren();busy=false;status(unknown?'Предыдущее задание не подтверждено. Проверьте этикетку.':'Модель выбрана. Найдите принтер.');profileUi();}};
-$('scan').onclick=async()=>{busy=true;controls();status('Поиск '+(isWp()?'WP9529 (9529#…)':'D110')+'… Включите принтер и держите его рядом.');try{if(client)await client.disconnect();client=null;detected=null;const devices=await rpc('scan',$('profile').value);$('devices').replaceChildren();for(const d of devices){const option=document.createElement('option');option.value=d.id;option.textContent=d.name+' · '+d.id;$('devices').append(option);}status(devices.length?'Выберите принтер и нажмите «Подключить».':'Принтер не найден. Проверьте Bluetooth и питание. На Android 8–11 также включите геолокацию.');}catch(e){status(e.message);}finally{busy=false;controls();}};
+$('scan').onclick=async()=>{busy=true;controls();status('Поиск '+(isWp()?wpProfile().name+' ('+wpProfile().prefix+'…)':'D110')+'… Включите принтер и держите его рядом.');try{if(client)await client.disconnect();client=null;detected=null;const devices=await rpc('scan',$('profile').value);$('devices').replaceChildren();for(const d of devices){const option=document.createElement('option');option.value=d.id;option.textContent=d.name+' · '+d.id;$('devices').append(option);}status(devices.length?'Выберите принтер и нажмите «Подключить».':'Принтер не найден. Проверьте Bluetooth и питание. На Android 8–11 также включите геолокацию.');}catch(e){status(e.message);}finally{busy=false;controls();}};
 $('connect').onclick=async()=>{busy=true;controls();status('Подключение и проверка модели…');try{
- if(client)await client.disconnect();detected=null;client=isWp()?new WPClient():new AndroidClient();
+ if(client)await client.disconnect();detected=null;client=isWp()?new WPClient($('profile').value):new AndroidClient();
  const info=await client.connect($('devices').value);
  if(isWp()){
-  WP9529.ready(info.status);if(info.firmware!=='V50')throw Error('WP9529: обнаружена прошивка '+info.firmware+'. Этот профиль рассчитан на V50.');
-  detected={head:96};status('WP9529 подключён. Прошивка '+info.firmware+', ширина 12 мм.'+(unknown?' Предыдущее задание не подтверждено — проверьте этикетку.':''));
+  WP9529.ready(info.status);WP9529.firmware(client.profile,info.firmware);
+  detected={head:96};status(client.model.name+' подключён. Прошивка '+info.firmware+', ширина 12 мм.'+(unknown?' Предыдущее задание не подтверждено — проверьте этикетку.':''));
  }else{detected=core.profile(info,client.getModelMetadata(),client.getPrintTaskType());
  client.on('printprogress',event=>{if(printing)status(`Печать: ${event.page} / ${event.pagesTotal} · ${event.pagePrintProgress}%`);});
  status(`D110 подключён. ПО ${info.softwareVersion??'—'}, аппаратура ${info.hardwareVersion??'—'}.`+(unknown?' Предыдущее задание не подтверждено — проверьте этикетку.':''));}
@@ -78,7 +79,7 @@ $('print').onclick=async()=>{if(busy||printing||unknown||!prepared||!detected||!
   if(wp){
    const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height);
    const rows=WP9529.raster(pixels.data,canvas.width,canvas.height);
-   printing=true;LabelNative.setPrinting(true);controls();status('Проверка WP9529 перед печатью…');
+   printing=true;LabelNative.setPrinting(true);controls();status('Проверка '+active.model.name+' перед печатью…');
    await WP9529.run(active.driver,rows,wp,{...hooks,progress:p=>status(p.phase==='sending'?`Передача: ${p.percent}% · копия ${p.copy} / ${p.copies}`:p.phase==='waiting'?`Ожидание завершения · копия ${p.copy} / ${p.copies}`:`Подтверждено копий: ${p.copy} / ${p.copies}`)});
   }else{
   core.profile(client.getPrinterInfo(),client.getModelMetadata(),client.getPrintTaskType());

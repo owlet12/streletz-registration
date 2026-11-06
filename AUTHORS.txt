@@ -9,3 +9,6 @@ niimbluelib: Copyright (c) 2024 MultiMote (MIT).
 WP9529 protocol/driver: Copyright (c) 2026 Arttu Mahlakaarto (MIT).
 WP9529 Android adaptation: owlet; pinned upstream commit 5096f206ac20103089a512204425ccccdc9c802e.
 Полные уведомления: android/app/src/main/assets/label-print/THIRD-PARTY-NOTICES.txt.
+
+WP9539 profile and independent interoperability implementation: owlet.
+Protocol observations: WP9539_PROTOCOL.md; iLabel proprietary code and assets are not redistributed.

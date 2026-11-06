@@ -25,6 +25,20 @@ public final class PrinterTransportProfileSelfTest {
         for(int op:new int[]{0x80,0x81,0x82,0xb5,0x07,0xcd})blocked(new byte[]{(byte)op,0},185);
         blocked(new byte[]{1,0},185);blocked(new byte[0],185);
         PrinterTransportProfile.validateWrite("d110",new byte[1024],23);
+        check(PrinterTransportProfile.parse("wp9539").equals("wp9539"));
+        check(PrinterTransportProfile.service("wp9539").equals(PrinterTransportProfile.WP_SERVICE));
+        check(PrinterTransportProfile.matches("wp9539","9539#TEST",false));
+        for(String name:new String[]{null,"9539#","95391#TEST","9539A#TEST","9529#TEST","D110"})check(!PrinterTransportProfile.matches("wp9539",name,true));
+        for(String selected:new String[]{"wp9539","wp9529"}){
+            for(byte[] forbidden:new byte[][]{{(byte)0xbf,0,0,0,0,0,0},{(byte)0x80},{(byte)0xb5,60,0},{3,0,0,5}}){
+                try{PrinterTransportProfile.validateWrite(selected,forbidden,185);throw new AssertionError();}catch(IllegalArgumentException expected){}
+            }
+        }
+        PrinterTransportProfile.validateWrite("wp9539",new byte[]{2,64,3,0,0,0,1,32},23); // 832 rows, 100 mm + 4 mm feed.
+        blocked(new byte[]{2,64,3,0,0,0,1,32},23);
+        byte[] last=new byte[16];last[0]=3;last[1]=63;last[2]=3;last[3]=1;
+        PrinterTransportProfile.validateWrite("wp9539",last,23);blocked(last,23);
+        last[1]=64;try{PrinterTransportProfile.validateWrite("wp9539",last,23);throw new AssertionError();}catch(IllegalArgumentException expected){}
         System.out.println("PASS PrinterTransportProfile: exact names, separate channels, whole-command MTU limits, valid frames, unsupported commands rejected, D110 unchanged");
     }
 }

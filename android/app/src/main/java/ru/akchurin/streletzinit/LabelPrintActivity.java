@@ -177,17 +177,17 @@ public final class LabelPrintActivity extends Activity {
                 if(status!=0)throw new IOException("Не удалось прочитать службы принтера");
                 BluetoothGattService service=current.getService(PrinterTransportProfile.service(profile));
                 if(service==null)throw new IOException("Служба выбранной модели принтера не найдена");
-                if(PrinterTransportProfile.WP9529.equals(profile)){
+                if(PrinterTransportProfile.isVson(profile)){
                     channel=service.getCharacteristic(PrinterTransportProfile.WP_WRITE);
                     notifyChannel=service.getCharacteristic(PrinterTransportProfile.WP_NOTIFY);
-                    if(channel==null||(channel.getProperties()&BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE)==0)throw new IOException("Канал записи WP9529 недоступен");
+                    if(channel==null||(channel.getProperties()&BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE)==0)throw new IOException("Канал записи VSON недоступен");
                 }else for(BluetoothGattCharacteristic candidate:service.getCharacteristics()){
                     int properties=candidate.getProperties();
                     if((properties&BluetoothGattCharacteristic.PROPERTY_NOTIFY)!=0&&(properties&BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE)!=0){
                         if(channel!=null)throw new IOException("Неоднозначный канал принтера");channel=candidate;
                     }
                 }
-                if(!PrinterTransportProfile.WP9529.equals(profile))notifyChannel=channel;
+                if(!PrinterTransportProfile.isVson(profile))notifyChannel=channel;
                 if(notifyChannel==null||(notifyChannel.getProperties()&BluetoothGattCharacteristic.PROPERTY_NOTIFY)==0||!current.setCharacteristicNotification(notifyChannel,true))throw new IOException("Канал ответов принтера недоступен");
                 BluetoothGattDescriptor descriptor=notifyChannel.getDescriptor(CCCD);if(descriptor==null)throw new IOException("Уведомления принтера недоступны");
                 descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
@@ -216,7 +216,7 @@ public final class LabelPrintActivity extends Activity {
     private void writeNext()throws Exception{
         if(writing==null||writeId<0)return;
         if(offset==writing.length){int id=writeId;writeId=-1;writing=null;reply(id,new JSONObject(),null);return;}
-        int count=PrinterTransportProfile.WP9529.equals(profile)?writing.length:Math.min(PrinterTransportProfile.maxPayload(mtu),writing.length-offset);
+        int count=PrinterTransportProfile.isVson(profile)?writing.length:Math.min(PrinterTransportProfile.maxPayload(mtu),writing.length-offset);
         byte[] part=Arrays.copyOfRange(writing,offset,offset+count);offset+=count;
         channel.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);channel.setValue(part);
         if(!gatt.writeCharacteristic(channel))throw new IOException("Принтер занят; передача остановлена");

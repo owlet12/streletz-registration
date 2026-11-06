@@ -2,23 +2,24 @@
 // Copyright (c) 2026 owlet
 const assert=require('node:assert/strict');
 const wp=require('../app/src/main/assets/label-print/wp9529.js');
+const model=wp.profile(process.env.PRINTER_PROFILE||'wp9529');
 const tests=[];const test=(name,fn)=>tests.push([name,fn]);
 const opts={length:30,gap:8.5,paper:'gap',density:32,copies:1};
 const rows=new Uint8Array(240*12).fill(0x81);
 const status=(state=0,error=0)=>Uint8Array.from([1,12,0,96,0,state,error,0,0,0,1,0x53,1]);
 function fixture(options={}){
- let now=0,driver;const f={writes:[],persisted:[],aborts:0,progress:[],headers:0,lines:0,polls:0,finished:0,unknown:false};
+ let now=0,driver;const f={writes:[],persisted:[],aborts:0,progress:[],headers:0,lines:0,polls:0,finished:0,unknown:false,expectedLines:240};
  const transport={connected:true,maxPayload:options.maximum||182,write:async raw=>{
   const p=Uint8Array.from(raw);f.writes.push(p);if(options.write)await options.write(p,f,driver,transport);
   if(options.silent===p[0])return;
-  if(p[0]===1){let s=0;if(f.headers&&f.lines===240&&f.finished<f.headers){f.polls++;s=options.busyForever||f.polls<=2?1:0;if(!s)f.finished++;}
+  if(p[0]===1){let s=0;if(f.headers&&f.lines===f.expectedLines&&f.finished<f.headers){f.polls++;s=options.busyForever||f.polls<=2?1:0;if(!s)f.finished++;}
    driver.receive(options.status?options.status(s,f):status(s));
-  }else if(p[0]===0xb2)driver.receive(Uint8Array.from([0xb2,options.fw??0x50]));
+  }else if(p[0]===0xb2)driver.receive(Uint8Array.from([0xb2,options.fw??parseInt(model.firmware.slice(1),16)]));
   else if(p[0]===4)driver.receive(Uint8Array.of(4,0));
-  else if(p[0]===2){f.headers++;f.lines=0;f.polls=0;if(options.header)options.header(driver,f);driver.receive(Uint8Array.from(options.ack||[0xa5,0x20,3,0,0,0]));}
+  else if(p[0]===2){f.headers++;f.expectedLines=p[1]|p[2]<<8;f.lines=0;f.polls=0;if(options.header)options.header(driver,f);driver.receive(Uint8Array.from(options.ack||[0xa5,0x20,3,0,0,0]));}
   else if(p[0]===3){assert.equal(p[1]|p[2]<<8,f.lines);assert.ok(p.length<=transport.maxPayload);assert.equal(p.length,4+p[3]*12);f.lines+=p[3];}
  }};
- driver=new wp.Driver(transport,{requestMs:options.requestMs||20,flowMs:200,doneMs:4000,now:()=>now,sleep:async ms=>{now+=ms;if(options.sleep)await options.sleep(ms,f,driver,transport);}});
+ driver=new wp.Driver(transport,{profile:model.id,requestMs:options.requestMs||20,flowMs:200,doneMs:4000,now:()=>now,sleep:async ms=>{now+=ms;if(options.sleep)await options.sleep(ms,f,driver,transport);}});
  f.driver=driver;f.transport=transport;
  f.hooks={persist:value=>{if(options.persist&&options.persist(value,f)===false)return false;f.unknown=value;f.persisted.push(value);if(!value)assert.equal(f.finished,options.copies||1);return true;},abort:()=>{f.aborts++;transport.connected=false;},progress:p=>f.progress.push(p)};
  f.run=async extra=>{await driver.probe();await wp.run(driver,rows,{...opts,...extra},f.hooks);};return f;
@@ -45,7 +46,7 @@ test('mid-stream pause stops raster until resume',async()=>{
 });
 test('stalled buffer leaves unknown, no raster and no second copy',async()=>{const f=fixture({header:d=>d.receive(Uint8Array.of(0xa7))});await assert.rejects(f.run({copies:2}),/буфер/);assert.deepEqual(f.persisted,[true]);assert.equal(f.headers,1);assert.equal(f.lines,0);assert.equal(f.aborts,1);});
 test('resume ACK is not replayed',async()=>{for(const ack of [[0xa4,0,0,0],[0xa5,0,0,4,0,0],[0xa5,0,0,0,0,1],[0xa5]]){const f=fixture({ack});await assert.rejects(f.run(),/возобновления/);assert.equal(f.lines,0);assert.equal(f.headers,1);assert.ok(f.unknown);}});
-test('paper error after data keeps unknown',async()=>{const f=fixture({status:(s,f)=>status(s,f.lines===240?1:0)});await assert.rejects(f.run({copies:2}),/ошибку/);assert.equal(f.headers,1);assert.ok(f.unknown);});
+test('paper error after data keeps unknown',async()=>{const f=fixture({status:(s,f)=>status(s,f.lines===f.expectedLines?1:0)});await assert.rejects(f.run({copies:2}),/ошибку/);assert.equal(f.headers,1);assert.ok(f.unknown);});
 test('busy timeout keeps unknown, no retry',async()=>{const f=fixture({busyForever:true});await assert.rejects(f.run(),/завершение/);assert.equal(f.headers,1);assert.ok(f.unknown);});
 test('failed pending persistence sends no reset/header/raster',async()=>{const f=fixture({persist:()=>false});await assert.rejects(f.run(),/сохранить/);assert.ok(f.writes.every(x=>[1,0xb2].includes(x[0])));});
 test('failed completion persistence leaves unknown',async()=>{const f=fixture({persist:value=>value});await assert.rejects(f.run(),/состояние не сохранено/);assert.ok(f.unknown);assert.equal(f.finished,1);});
@@ -59,4 +60,30 @@ test('deadline aborts sleeping task, late continuation cannot write',async()=>{
 });
 test('transport failure before ACK cannot become success',async()=>{const f=fixture({write:p=>{if(p[0]===2)throw Error('test write failure');}});await assert.rejects(f.run(),/write failure/);assert.ok(f.unknown);assert.equal(f.finished,0);});
 test('unsolicited error while streaming stops transmission',async()=>{const f=fixture({write:(p,f,d)=>{if(p[0]===3)d.receive(status(1,1));}});await assert.rejects(f.run(),/ошибку/);assert.equal(f.writes.filter(x=>x[0]===3).length,1);});
-(async()=>{for(const [name,fn]of tests){await fn();console.log('PASS '+name);}console.log('PASS '+tests.length+' WP9529 protocol scenarios (transport simulated; no physical print).');})().catch(e=>{console.error(e);process.exitCode=1;});
+
+test('profile discovery excludes other models and variants',()=>{
+ assert.ok(wp.matches(model.id,model.prefix+'FIXTURE'));
+ for(const name of [null,model.prefix,'95391#FIXTURE','9539A#FIXTURE','95291#FIXTURE','D110',model.id==='wp9539'?'9529#FIXTURE':'9539#FIXTURE'])assert.equal(wp.matches(model.id,name),false);
+ assert.throws(()=>wp.profile('__proto__'));assert.throws(()=>new wp.Driver({},{profile:'unknown'}));
+});
+test('other model firmware never enables printing',async()=>{
+ const f=fixture({fw:model.id==='wp9539'?0x50:0x31});await assert.rejects(f.run(),/прошивка|Профиль/);
+ assert.ok(f.writes.every(p=>[1,0xb2].includes(p[0])));assert.deepEqual(f.persisted,[]);
+});
+test('zero available buffer cannot stream or claim success',async()=>{
+ const f=fixture({ack:[0xa5,0,0,0,0,0]});await assert.rejects(f.run(),/буфер/);assert.equal(f.lines,0);assert.ok(f.unknown);
+});
+test('continuous tape includes model feed as white rows, not extra labels',async()=>{
+ const f=fixture();await f.run({paper:'continuous'});const head=f.writes.find(p=>p[0]===2);
+ assert.equal(head.length,8);assert.equal(head[1]|head[2]<<8,240+model.feed);assert.equal(f.lines,240+model.feed);assert.equal(f.headers,1);
+ const raster=Buffer.concat(f.writes.filter(p=>p[0]===3).map(p=>Buffer.from(p.slice(4))));
+ assert.deepEqual(raster.subarray(0,rows.length),Buffer.from(rows));assert.equal(raster.subarray(rows.length).length,model.feed*12);assert.ok(raster.subarray(rows.length).every(v=>v===0));
+});
+test('continuous maximum length and copies preserve offsets and full feed',async()=>{
+ const f=fixture({copies:2,maximum:20});await f.driver.probe();await wp.run(f.driver,new Uint8Array(800*12),{...opts,paper:'continuous',length:100,copies:2},f.hooks);
+ assert.equal(f.lines,800+model.feed);assert.equal(f.finished,2);assert.equal(f.writes.filter(p=>p[0]===3).length,(800+model.feed)*2);
+});
+test('different head is rejected before reset',async()=>{
+ const f=fixture({status:()=>Uint8Array.from([1,15,0,120,0,0,0,0,0,0])});await assert.rejects(f.run(),/головку/);assert.ok(f.writes.every(p=>[1,0xb2].includes(p[0])));
+});
+(async()=>{for(const [name,fn]of tests){await fn();console.log('PASS '+name);}console.log('PASS '+tests.length+' '+model.name+' protocol scenarios (transport simulated; no physical print).');})().catch(e=>{console.error(e);process.exitCode=1;});
