@@ -14,9 +14,11 @@ Release APK требует подписи собственным ключом; �
 JVM-проверки расположены в `android/tests/*SelfTest.java` и используют
 собранные debug classes, android.jar, ZXing 3.5.4 и JVM-реализацию org.json.
 
-Проверки печати: `node android/tests/label-print.test.cjs`.
+Проверки печати: `node android/tests/label-print.test.cjs` и
+`node android/tests/wp9529.test.cjs`.
 Для UI-проверки установите Playwright и его Chromium, затем выполните
-`node android/tests/label-ui.test.cjs`. Если используется установленный Chrome,
+`node android/tests/label-ui.test.cjs` и `node android/tests/wp9529-ui.test.cjs`.
+Если используется установленный Chrome,
 задайте полный путь к нему в переменной окружения `CHROME_PATH`.
 UI-проверка имитирует Bluetooth и не подтверждает работу физического принтера.
 

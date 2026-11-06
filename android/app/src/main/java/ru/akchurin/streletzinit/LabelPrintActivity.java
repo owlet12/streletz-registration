@@ -18,15 +18,16 @@ import java.util.*;
 /** Local label UI + BLE transport only; no access to project/panel commands. */
 public final class LabelPrintActivity extends Activity {
     private static final String ORIGIN="https://streletz-print.invalid/";
-    private static final UUID SERVICE=UUID.fromString("e7810a71-73ae-499d-8c15-faa9aef0c3f2");
     private static final UUID CCCD=UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     private final Handler ui=new Handler(Looper.getMainLooper());
     private final Map<String,BluetoothDevice> found=new LinkedHashMap<>();
+    private final Map<String,String> foundNames=new LinkedHashMap<>();
+    private String profile=PrinterTransportProfile.D110;
     private WebView web;
     private BluetoothAdapter adapter;
     private BluetoothLeScanner scanner;
     private BluetoothGatt gatt;
-    private BluetoothGattCharacteristic channel;
+    private BluetoothGattCharacteristic channel, notifyChannel;
     private boolean destroyed, scanning, discovering;
     private int scanId=-1, connectId=-1, writeId=-1, permissionId=-1, mtu=23, offset;
     private byte[] writing;
@@ -51,7 +52,7 @@ public final class LabelPrintActivity extends Activity {
             @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){
                 String url=request.getUrl().toString();
                 String name=url.startsWith(ORIGIN)?url.substring(ORIGIN.length()):"";
-                if(!Arrays.asList("index.html","print.js","print-core.js","niimbluelib-0.48.0.min.js").contains(name))
+                if(!Arrays.asList("index.html","print.js","print-core.js","wp9529.js","niimbluelib-0.48.0.min.js").contains(name))
                     return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));
                 try{return new WebResourceResponse(name.endsWith(".js")?"application/javascript":"text/html","UTF-8",getAssets().open("label-print/"+name));}
                 catch(IOException e){return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));}
@@ -64,14 +65,28 @@ public final class LabelPrintActivity extends Activity {
     private final class NativeBridge {
         @JavascriptInterface public String config(){
             try{return new JSONObject().put("width",settings.getInt("width",30)).put("height",settings.getInt("height",12))
-                    .put("copies",settings.getInt("copies",1)).put("pending",settings.getBoolean("pending",false)).toString();}
+                    .put("copies",settings.getInt("copies",1)).put("profile",settings.getString("profile","d110"))
+                    .put("paper",settings.getString("paper","gap")).put("gap",settings.getString("gap","8.5")).put("density",settings.getInt("density",32)).put("pending",settings.getBoolean("pending",false)).toString();}
             catch(Exception e){return "{}";}
         }
         @JavascriptInterface public boolean saveConfig(int width,int height,int copies){
             if(width<10||width>100||height<6||height>12||copies<1||copies>20)return false;
             return settings.edit().putInt("width",width).putInt("height",height).putInt("copies",copies).commit();
         }
+        @JavascriptInterface public boolean savePrinterConfig(String value){
+            try{
+                JSONObject v=new JSONObject(value);String model=PrinterTransportProfile.parse(v.getString("profile"));
+                String paper=v.getString("paper");double gap=v.getDouble("gap");int density=v.getInt("density");
+                if(!Arrays.asList("gap","continuous").contains(paper)||!Double.isFinite(gap)||gap<0.1||gap>25.5||!Arrays.asList(24,32,39).contains(density))return false;
+                return settings.edit().putString("profile",model).putString("paper",paper).putString("gap",Double.toString(gap)).putInt("density",density).commit();
+            }catch(Exception e){return false;}
+        }
         @JavascriptInterface public boolean pending(boolean value){return settings.edit().putBoolean("pending",value).commit();}
+        @JavascriptInterface public void setPrinting(boolean value){ui.post(()->{
+            if(destroyed)return;
+            if(value)getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            else getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        });}
         @JavascriptInterface public void request(int id,String action,String payload){
             if(id<1||action==null||payload==null||payload.length()>8192)return;
             ui.post(()->{if(!destroyed)handle(id,action,payload);});
@@ -83,6 +98,7 @@ public final class LabelPrintActivity extends Activity {
             if("disconnect".equals(action)){closeConnection("Связь закрыта");reply(id,new JSONObject(),null);return;}
             if("scan".equals(action)){
                 if(scanning||connectId>=0||writeId>=0||permissionId>=0)throw new IOException("Дождитесь текущего подключения");
+                profile=PrinterTransportProfile.parse(payload);
                 if(!permissions()){permissionId=id;requestPermissions(Build.VERSION.SDK_INT>=31?new String[]{Manifest.permission.BLUETOOTH_SCAN,Manifest.permission.BLUETOOTH_CONNECT}:new String[]{Manifest.permission.ACCESS_FINE_LOCATION},42);return;}
                 startScan(id);return;
             }
@@ -90,7 +106,7 @@ public final class LabelPrintActivity extends Activity {
             if("connect".equals(action)){connect(id,payload);return;}
             if("write".equals(action)){
                 if(gatt==null||channel==null||connectId>=0||writeId>=0)throw new IOException("Принтер не подключён или занят");
-                byte[] data=Base64.decode(payload,Base64.NO_WRAP);if(data.length<1||data.length>4096)throw new IOException("Некорректный размер пакета");
+                byte[] data=Base64.decode(payload,Base64.NO_WRAP);PrinterTransportProfile.validateWrite(profile,data,mtu);
                 writing=data;offset=0;writeId=id;writeNext();
                 ui.postDelayed(()->{if(writeId==id)closeConnection("Принтер не подтвердил передачу данных");},5000);return;
             }
@@ -104,11 +120,11 @@ public final class LabelPrintActivity extends Activity {
     @Override public void onRequestPermissionsResult(int request,String[] names,int[] grants){
         super.onRequestPermissionsResult(request,names,grants);if(request!=42)return;
         int id=permissionId;permissionId=-1;if(id<0)return;
-        if(permissions())handle(id,"scan","");else reply(id,null,"Разрешение Bluetooth не предоставлено");
+        if(permissions())handle(id,"scan",profile);else reply(id,null,"Разрешение Bluetooth не предоставлено");
     }
     private void startScan(int id)throws Exception{
         if(adapter==null||!adapter.isEnabled())throw new IOException("Включите Bluetooth на телефоне");
-        closeConnection("Выбор принтера");found.clear();scanner=adapter.getBluetoothLeScanner();
+        closeConnection("Выбор принтера");found.clear();foundNames.clear();scanner=adapter.getBluetoothLeScanner();
         if(scanner==null)throw new IOException("Поиск Bluetooth недоступен");
         scanning=true;scanId=id;
         scanner.startScan(null,new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(),scanCallback);
@@ -119,9 +135,9 @@ public final class LabelPrintActivity extends Activity {
             if(!scanning||found.size()>=40)return;
             try{
                 BluetoothDevice device=result.getDevice();String name=device.getName();
-                if(name==null&&result.getScanRecord()!=null)name=result.getScanRecord().getDeviceName();
-                boolean service=result.getScanRecord()!=null&&result.getScanRecord().getServiceUuids()!=null&&result.getScanRecord().getServiceUuids().contains(new ParcelUuid(SERVICE));
-                if(service||(name!=null&&name.toUpperCase(Locale.ROOT).startsWith("D110")))found.put(device.getAddress(),device);
+                if(result.getScanRecord()!=null&&result.getScanRecord().getDeviceName()!=null)name=result.getScanRecord().getDeviceName();
+                boolean service=result.getScanRecord()!=null&&result.getScanRecord().getServiceUuids()!=null&&result.getScanRecord().getServiceUuids().contains(new ParcelUuid(PrinterTransportProfile.NIIMBOT_SERVICE));
+                if(PrinterTransportProfile.matches(profile,name,service)){found.put(device.getAddress(),device);foundNames.put(device.getAddress(),name==null?"NIIMBOT":name);}
             }catch(SecurityException ignored){}
         });}
         @Override public void onScanFailed(int error){ui.post(()->finishScan("Поиск Bluetooth завершился ошибкой "+error));}
@@ -130,7 +146,7 @@ public final class LabelPrintActivity extends Activity {
         if(!scanning)return;int id=scanId;scanId=-1;scanning=false;
         try{scanner.stopScan(scanCallback);}catch(Exception ignored){}
         JSONArray devices=new JSONArray();
-        try{for(BluetoothDevice d:found.values())devices.put(new JSONObject().put("id",d.getAddress()).put("name",d.getName()==null?"NIIMBOT":d.getName()));}
+        try{for(BluetoothDevice d:found.values())devices.put(new JSONObject().put("id",d.getAddress()).put("name",foundNames.get(d.getAddress())));}
         catch(Exception e){error=safe(e);}
         reply(id,devices,error);
     }
@@ -159,46 +175,54 @@ public final class LabelPrintActivity extends Activity {
             if(current!=gatt)return;
             try{
                 if(status!=0)throw new IOException("Не удалось прочитать службы принтера");
-                BluetoothGattService service=current.getService(SERVICE);
-                if(service==null)throw new IOException("Служба NIIMBOT не найдена");
-                for(BluetoothGattCharacteristic candidate:service.getCharacteristics()){
+                BluetoothGattService service=current.getService(PrinterTransportProfile.service(profile));
+                if(service==null)throw new IOException("Служба выбранной модели принтера не найдена");
+                if(PrinterTransportProfile.WP9529.equals(profile)){
+                    channel=service.getCharacteristic(PrinterTransportProfile.WP_WRITE);
+                    notifyChannel=service.getCharacteristic(PrinterTransportProfile.WP_NOTIFY);
+                    if(channel==null||(channel.getProperties()&BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE)==0)throw new IOException("Канал записи WP9529 недоступен");
+                }else for(BluetoothGattCharacteristic candidate:service.getCharacteristics()){
                     int properties=candidate.getProperties();
                     if((properties&BluetoothGattCharacteristic.PROPERTY_NOTIFY)!=0&&(properties&BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE)!=0){
                         if(channel!=null)throw new IOException("Неоднозначный канал принтера");channel=candidate;
                     }
                 }
-                if(channel==null||!current.setCharacteristicNotification(channel,true))throw new IOException("Канал NIIMBOT недоступен");
-                BluetoothGattDescriptor descriptor=channel.getDescriptor(CCCD);if(descriptor==null)throw new IOException("Уведомления принтера недоступны");
+                if(!PrinterTransportProfile.WP9529.equals(profile))notifyChannel=channel;
+                if(notifyChannel==null||(notifyChannel.getProperties()&BluetoothGattCharacteristic.PROPERTY_NOTIFY)==0||!current.setCharacteristicNotification(notifyChannel,true))throw new IOException("Канал ответов принтера недоступен");
+                BluetoothGattDescriptor descriptor=notifyChannel.getDescriptor(CCCD);if(descriptor==null)throw new IOException("Уведомления принтера недоступны");
                 descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
                 if(!current.writeDescriptor(descriptor))throw new IOException("Не удалось включить ответы принтера");
             }catch(Exception e){closeConnection(safe(e));}
         });}
         @Override public void onDescriptorWrite(BluetoothGatt current,BluetoothGattDescriptor descriptor,int status){ui.post(()->{
-            if(current!=gatt||connectId<0||!CCCD.equals(descriptor.getUuid()))return;
+            if(current!=gatt||connectId<0||!CCCD.equals(descriptor.getUuid())||descriptor.getCharacteristic()!=notifyChannel)return;
             if(status!=0){closeConnection("Принтер отклонил уведомления");return;}
-            int id=connectId;connectId=-1;reply(id,new JSONObject(),null);
+            int id=connectId;connectId=-1;
+            try{reply(id,new JSONObject().put("profile",profile).put("name",foundNames.get(current.getDevice().getAddress())).put("mtu",mtu).put("maxPayload",PrinterTransportProfile.maxPayload(mtu)),null);}
+            catch(Exception e){reply(id,null,safe(e));closeConnection(safe(e));}
         });}
         @Override public void onCharacteristicChanged(BluetoothGatt current,BluetoothGattCharacteristic ch){byte[] value=ch.getValue();receive(current,ch,value==null?null:value.clone());}
         @Override public void onCharacteristicChanged(BluetoothGatt current,BluetoothGattCharacteristic ch,byte[] value){receive(current,ch,value.clone());}
         @Override public void onCharacteristicWrite(BluetoothGatt current,BluetoothGattCharacteristic ch,int status){ui.post(()->{
             if(current!=gatt||ch!=channel||writeId<0)return;
             if(status!=0){closeConnection("Ошибка передачи на принтер");return;}
-            ui.postDelayed(()->{if(current==gatt&&writeId>=0)try{writeNext();}catch(Exception e){closeConnection(safe(e));}},12);
+            int expectedWriteId=writeId;
+            ui.postDelayed(()->{if(current==gatt&&writeId==expectedWriteId)try{writeNext();}catch(Exception e){closeConnection(safe(e));}},12);
         });}
     };
     private void receive(BluetoothGatt current,BluetoothGattCharacteristic ch,byte[] data){
-        if(data==null)return;ui.post(()->{if(current==gatt&&ch==channel)js("window.onBleData("+JSONObject.quote(Base64.encodeToString(data,Base64.NO_WRAP))+");");});
+        if(data==null)return;ui.post(()->{if(current==gatt&&ch==notifyChannel)js("window.onBleData("+JSONObject.quote(Base64.encodeToString(data,Base64.NO_WRAP))+");");});
     }
     private void writeNext()throws Exception{
         if(writing==null||writeId<0)return;
         if(offset==writing.length){int id=writeId;writeId=-1;writing=null;reply(id,new JSONObject(),null);return;}
-        int count=Math.min(mtu-3,writing.length-offset);
+        int count=PrinterTransportProfile.WP9529.equals(profile)?writing.length:Math.min(PrinterTransportProfile.maxPayload(mtu),writing.length-offset);
         byte[] part=Arrays.copyOfRange(writing,offset,offset+count);offset+=count;
         channel.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);channel.setValue(part);
         if(!gatt.writeCharacteristic(channel))throw new IOException("Принтер занят; передача остановлена");
     }
     private void closeConnection(String reason){
-        BluetoothGatt previous=gatt;gatt=null;channel=null;writing=null;discovering=false;
+        BluetoothGatt previous=gatt;gatt=null;channel=null;notifyChannel=null;writing=null;discovering=false;
         if(connectId>=0){int id=connectId;connectId=-1;reply(id,null,reason);}
         if(writeId>=0){int id=writeId;writeId=-1;reply(id,null,reason);}
         if(previous!=null){try{previous.disconnect();previous.close();}catch(Exception ignored){}js("window.onBleDisconnected();");}
@@ -213,6 +237,6 @@ public final class LabelPrintActivity extends Activity {
                 .setPositiveButton("Закрыть",(d,w)->finish()).setNegativeButton("Остаться",null).show();
         else super.onBackPressed();
     }
-    @Override protected void onStop(){finishScan("Поиск остановлен");closeConnection("Экран печати закрыт");super.onStop();}
+    @Override protected void onStop(){getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);finishScan("Поиск остановлен");closeConnection("Экран печати закрыт");super.onStop();}
     @Override protected void onDestroy(){closeConnection("Экран печати закрыт");destroyed=true;ui.removeCallbacksAndMessages(null);if(web!=null){web.removeJavascriptInterface("LabelNative");web.destroy();}super.onDestroy();}
 }
