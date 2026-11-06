@@ -39,6 +39,15 @@ public final class PrinterTransportProfileSelfTest {
         byte[] last=new byte[16];last[0]=3;last[1]=63;last[2]=3;last[3]=1;
         PrinterTransportProfile.validateWrite("wp9539",last,23);blocked(last,23);
         last[1]=64;try{PrinterTransportProfile.validateWrite("wp9539",last,23);throw new AssertionError();}catch(IllegalArgumentException expected){}
+        check(PrinterTransportProfile.detect("9539#TEST",false).equals("wp9539"));
+        check(PrinterTransportProfile.detect("9529#TEST",true).equals("wp9529"));
+        check(PrinterTransportProfile.detect("D110-test",false).equals("d110"));
+        for(String name:new String[]{"95391#TEST","9539A#TEST","95292#TEST","WP9539A"})check(PrinterTransportProfile.detect(name,true)==null);
+        check(PrinterTransportProfile.detect("other",false)==null);
+        check(PrinterTransportProfile.savedDevice("wp9539","9539#TEST","FA:00:00:00:00:01"));
+        check(!PrinterTransportProfile.savedDevice("wp9539","9529#TEST","FA:00:00:00:00:01"));
+        check(!PrinterTransportProfile.savedDevice("unknown","9539#TEST","FA:00:00:00:00:01"));
+        check(!PrinterTransportProfile.savedDevice("wp9539","9539#TEST","invalid"));
         System.out.println("PASS PrinterTransportProfile: exact names, separate channels, whole-command MTU limits, valid frames, unsupported commands rejected, D110 unchanged");
     }
 }

@@ -14,8 +14,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
   window.LabelNative={config:()=>JSON.stringify({width:40,height:12,copies:1,profile:'wp9539',...saved}),setPrinting:v=>fixture.awake.push(v),saveConfig:()=>true,savePrinterConfig:()=>true,pending:()=>true,
    saveTextConfig:value=>{if(fixture.failSave)return false;fixture.saved=JSON.parse(value);window.name=value;return true;},
    request:(id,action,payload)=>{let result={};
-    if(action==='scan')result=[{id:'FIXTURE',name:'9539#TEST'}];
-    if(action==='connect')result={profile:'wp9539',name:'9539#TEST',maxPayload:182};
+    if(action==='prepare')result={profile:'wp9539',name:'9539#TEST',maxPayload:182};
     if(action==='write'){
      const p=Array.from(atob(payload),c=>c.charCodeAt(0));fixture.writes.push(p);
      if(p[0]===1)notify([1,12,0,96,0,fixture.hold&&fixture.rows?1:0,0,0,0,0]);
@@ -35,13 +34,13 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  assert.equal(await page.locator('#fontSize').inputValue(),'14');assert.equal(await page.locator('#fontAuto').isChecked(),false);assert.ok(await ink()>small);
  assert.equal(await page.evaluate(()=>fixture.saved.fontSize),14);assert.equal(await page.evaluate(()=>fixture.saved.fontAuto),false);assert.equal(await page.evaluate(()=>fixture.writes.length),0);
  await page.reload();await init();assert.equal(await page.locator('#fontSize').inputValue(),'14');assert.equal(await page.locator('#fontAuto').isChecked(),false);
- await page.locator('#scan').click();await page.waitForFunction(()=>document.querySelector('#devices').value==='FIXTURE');await page.locator('#connect').click();await page.waitForFunction(()=>!document.querySelector('#print').disabled);
+
  await page.locator('#fontSize').fill('36');assert.match(await page.locator('#previewNote').textContent(),/не помещается/);assert.equal(await page.locator('#print').isDisabled(),true);assert.equal(await ink(),0);
  await page.locator('#fontSize').fill('37');assert.match(await page.locator('#previewNote').textContent(),/от 3 до 36/);assert.equal(await page.locator('#print').isDisabled(),true);
  await page.locator('#fontAuto').check();assert.equal(await page.locator('#print').isDisabled(),false); // Auto mode recovers from invalid manual input.
  await page.locator('#fontSize').fill('18');await page.locator('#fontAuto').check();assert.equal(await page.locator('#print').isDisabled(),false);
  await page.locator('#rotation').selectOption('90');assert.doesNotMatch(await page.locator('#previewNote').textContent(),/не помещается/);await page.locator('#rotation').selectOption('0');
- await page.screenshot({path:path.resolve('font-preview-0525.png'),fullPage:true});
+ await page.screenshot({path:path.resolve('font-preview-0526.png'),fullPage:true});
  const previewInk=await ink();await page.evaluate(()=>fixture.hold=true);await page.locator('#print').click();await page.waitForFunction(()=>fixture.rows===320);
  for(const id of ['fontSize','fontMinus','fontPlus','fontAuto'])assert.equal(await page.locator('#'+id).isDisabled(),true);
  const sentInk=await page.evaluate(()=>fixture.writes.filter(p=>p[0]===3).flatMap(p=>p.slice(4)).reduce((n,v)=>n+v.toString(2).replace(/0/g,'').length,0));assert.equal(sentInk,previewInk);

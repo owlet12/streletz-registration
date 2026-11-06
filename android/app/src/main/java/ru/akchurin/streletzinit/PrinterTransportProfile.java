@@ -23,6 +23,17 @@ final class PrinterTransportProfile {
         if(isVson(profile)){String prefix=WP9539.equals(profile)?"9539#":"9529#";return name!=null&&name.startsWith(prefix)&&name.length()>prefix.length();}
         return niimbotService||(name!=null&&name.toUpperCase(Locale.ROOT).startsWith("D110"));
     }
+    static String detect(String name,boolean niimbotService){
+        if(matches(WP9539,name,false))return WP9539;
+        if(matches(WP9529,name,false))return WP9529;
+        // Do not mistake excluded VSON variants for a NIIMBOT based on a service alone.
+        if(name!=null&&(name.startsWith("95")||name.toUpperCase(Locale.ROOT).startsWith("WP95")))return null;
+        return matches(D110,name,niimbotService)?D110:null;
+    }
+    static boolean savedDevice(String profile,String name,String address){
+        return address!=null&&address.matches("(?i)[0-9a-f]{2}(:[0-9a-f]{2}){5}")
+            &&(D110.equals(profile)||isVson(profile)&&matches(profile,name,false));
+    }
     static int maxPayload(int mtu){return Math.max(20,Math.min(182,mtu-3));}
     static void validateWrite(String profile,byte[] bytes,int mtu){
         if(bytes==null||bytes.length<1||bytes.length>4096)throw new IllegalArgumentException("Некорректный размер пакета");

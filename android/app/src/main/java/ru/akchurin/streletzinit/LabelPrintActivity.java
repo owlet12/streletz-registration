@@ -22,7 +22,11 @@ public final class LabelPrintActivity extends Activity {
     private final Handler ui=new Handler(Looper.getMainLooper());
     private final Map<String,BluetoothDevice> found=new LinkedHashMap<>();
     private final Map<String,String> foundNames=new LinkedHashMap<>();
+    private final Map<String,String> foundProfiles=new LinkedHashMap<>();
     private String profile=PrinterTransportProfile.D110;
+    private int prepareId=-1;
+    private boolean chooseNew, foreground;
+    private AlertDialog printerDialog;
     private WebView web;
     private BluetoothAdapter adapter;
     private BluetoothLeScanner scanner;
@@ -37,15 +41,16 @@ public final class LabelPrintActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         description=getIntent().getStringExtra("description");
-        if(description==null || description.trim().isEmpty() || description.length()>2000){finish();return;}
+        if(description==null)description="";
+        if(description.length()>2000){finish();return;}
         settings=getSharedPreferences("label-print",MODE_PRIVATE);
         if(Build.VERSION.SDK_INT>=33)getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,this::onBackPressed);
         BluetoothManager manager=(BluetoothManager)getSystemService(BLUETOOTH_SERVICE);
         adapter=manager==null?null:manager.getAdapter();
-        web=new WebView(this);
+        web=new WebView(this);web.setSaveEnabled(false);
         WebSettings ws=web.getSettings();ws.setJavaScriptEnabled(true);ws.setAllowFileAccess(false);ws.setAllowContentAccess(false);
         ws.setAllowFileAccessFromFileURLs(false);ws.setAllowUniversalAccessFromFileURLs(false);ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        ws.setSupportMultipleWindows(false);ws.setDomStorageEnabled(false);
+        ws.setSaveFormData(false);ws.setSupportMultipleWindows(false);ws.setDomStorageEnabled(false);
         web.addJavascriptInterface(new NativeBridge(),"LabelNative");
         web.setWebViewClient(new WebViewClient(){
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){return true;}
@@ -66,7 +71,8 @@ public final class LabelPrintActivity extends Activity {
         @JavascriptInterface public String config(){
             try{return new JSONObject().put("width",settings.getInt("width",30)).put("height",settings.getInt("height",12))
                     .put("fontSize",settings.getInt("fontSize",13)).put("fontAuto",settings.getBoolean("fontAuto",true))
-                    .put("copies",settings.getInt("copies",1)).put("profile",settings.getString("profile","d110"))
+                    .put("copies",settings.getInt("copies",1)).put("profile",settings.getString("printerProfile",settings.getString("profile","d110")))
+                    .put("printerName",settings.getString("printerName",""))
                     .put("paper",settings.getString("paper","gap")).put("gap",settings.getString("gap","8.5")).put("density",settings.getInt("density",32)).put("pending",settings.getBoolean("pending",false)).toString();}
             catch(Exception e){return "{}";}
         }
@@ -103,15 +109,24 @@ public final class LabelPrintActivity extends Activity {
 
     private void handle(int id,String action,String payload){
         try {
-            if("disconnect".equals(action)){closeConnection("Связь закрыта");reply(id,new JSONObject(),null);return;}
-            if("scan".equals(action)){
-                if(scanning||connectId>=0||writeId>=0||permissionId>=0)throw new IOException("Дождитесь текущего подключения");
-                profile=PrinterTransportProfile.parse(payload);
+            if("disconnect".equals(action)){cancelPreparation("Связь закрыта");closeConnection("Связь закрыта");reply(id,new JSONObject(),null);return;}
+            if(!foreground)throw new IOException("Экран печати закрыт");
+            if("prepare".equals(action)){
+                if(prepareId>=0||scanning||connectId>=0||writeId>=0||permissionId>=0)throw new IOException("Дождитесь текущего подключения");
+                prepareId=id;chooseNew="choose".equals(payload);
+                // A picker or permission dialog may be left open; expire the whole operation.
+                ui.postDelayed(()->{if(prepareId==id)cancelPreparation("Время выбора принтера истекло. Нажмите «Печатать» ещё раз.");},120000);
                 if(!permissions()){permissionId=id;requestPermissions(Build.VERSION.SDK_INT>=31?new String[]{Manifest.permission.BLUETOOTH_SCAN,Manifest.permission.BLUETOOTH_CONNECT}:new String[]{Manifest.permission.ACCESS_FINE_LOCATION},42);return;}
-                startScan(id);return;
+                prepare(id);return;
             }
             if(!permissions())throw new IOException("Нужно разрешение Bluetooth");
-            if("connect".equals(action)){connect(id,payload);return;}
+            if("remember".equals(action)){
+                if(gatt==null||channel==null||connectId>=0||prepareId>=0)throw new IOException("Принтер ещё не проверен");
+                String address=gatt.getDevice().getAddress(),name=foundNames.get(address);
+                if(!PrinterTransportProfile.savedDevice(profile,name,address))throw new IOException("Не удалось запомнить выбранный принтер");
+                if(!settings.edit().putString("printerAddress",address).putString("printerName",name).putString("printerProfile",profile).putString("profile",profile).commit())throw new IOException("Не удалось сохранить принтер");
+                reply(id,new JSONObject(),null);return;
+            }
             if("write".equals(action)){
                 if(gatt==null||channel==null||connectId>=0||writeId>=0)throw new IOException("Принтер не подключён или занят");
                 byte[] data=Base64.decode(payload,Base64.NO_WRAP);PrinterTransportProfile.validateWrite(profile,data,mtu);
@@ -119,7 +134,20 @@ public final class LabelPrintActivity extends Activity {
                 ui.postDelayed(()->{if(writeId==id)closeConnection("Принтер не подтвердил передачу данных");},5000);return;
             }
             throw new IOException("Неизвестное действие");
-        }catch(Exception e){if(writeId==id||connectId==id)closeConnection(safe(e));else if(scanId==id)finishScan(safe(e));else reply(id,null,safe(e));}
+        }catch(Exception e){if(prepareId==id)cancelPreparation(safe(e));else if(writeId==id||connectId==id)closeConnection(safe(e));else reply(id,null,safe(e));}
+    }
+    private void prepare(int id)throws Exception{
+        if(id!=prepareId||!foreground)return;
+        if(adapter==null||!adapter.isEnabled())throw new IOException("Включите Bluetooth и принтер, затем нажмите «Печатать».");
+        String address=settings.getString("printerAddress",""),name=settings.getString("printerName",""),model=settings.getString("printerProfile","");
+        if(!chooseNew&&PrinterTransportProfile.savedDevice(model,name,address)){
+            profile=model;found.put(address,adapter.getRemoteDevice(address));foundNames.put(address,name);foundProfiles.put(address,model);connect(id,address);
+        }else startScan(id);
+    }
+    private void cancelPreparation(String reason){
+        int id=prepareId;prepareId=-1;permissionId=-1;
+        if(printerDialog!=null){printerDialog.dismiss();printerDialog=null;}
+        finishScan(reason);closeConnection(reason);if(id>=0)reply(id,null,reason);
     }
     private boolean permissions(){
         if(Build.VERSION.SDK_INT>=31)return checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN)==PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED;
@@ -128,11 +156,12 @@ public final class LabelPrintActivity extends Activity {
     @Override public void onRequestPermissionsResult(int request,String[] names,int[] grants){
         super.onRequestPermissionsResult(request,names,grants);if(request!=42)return;
         int id=permissionId;permissionId=-1;if(id<0)return;
-        if(permissions())handle(id,"scan",profile);else reply(id,null,"Разрешение Bluetooth не предоставлено");
+        if(id!=prepareId)return;
+        if(permissions())try{prepare(id);}catch(Exception e){cancelPreparation(safe(e));}else cancelPreparation("Разрешение Bluetooth не предоставлено");
     }
     private void startScan(int id)throws Exception{
         if(adapter==null||!adapter.isEnabled())throw new IOException("Включите Bluetooth на телефоне");
-        closeConnection("Выбор принтера");found.clear();foundNames.clear();scanner=adapter.getBluetoothLeScanner();
+        closeConnection("Выбор принтера");found.clear();foundNames.clear();foundProfiles.clear();scanner=adapter.getBluetoothLeScanner();
         if(scanner==null)throw new IOException("Поиск Bluetooth недоступен");
         scanning=true;scanId=id;
         scanner.startScan(null,new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(),scanCallback);
@@ -145,7 +174,8 @@ public final class LabelPrintActivity extends Activity {
                 BluetoothDevice device=result.getDevice();String name=device.getName();
                 if(result.getScanRecord()!=null&&result.getScanRecord().getDeviceName()!=null)name=result.getScanRecord().getDeviceName();
                 boolean service=result.getScanRecord()!=null&&result.getScanRecord().getServiceUuids()!=null&&result.getScanRecord().getServiceUuids().contains(new ParcelUuid(PrinterTransportProfile.NIIMBOT_SERVICE));
-                if(PrinterTransportProfile.matches(profile,name,service)){found.put(device.getAddress(),device);foundNames.put(device.getAddress(),name==null?"NIIMBOT":name);}
+                String model=PrinterTransportProfile.detect(name,service);
+                if(model!=null){found.put(device.getAddress(),device);foundNames.put(device.getAddress(),name==null?"NIIMBOT":name);foundProfiles.put(device.getAddress(),model);}
             }catch(SecurityException ignored){}
         });}
         @Override public void onScanFailed(int error){ui.post(()->finishScan("Поиск Bluetooth завершился ошибкой "+error));}
@@ -153,13 +183,20 @@ public final class LabelPrintActivity extends Activity {
     private void finishScan(String error){
         if(!scanning)return;int id=scanId;scanId=-1;scanning=false;
         try{scanner.stopScan(scanCallback);}catch(Exception ignored){}
-        JSONArray devices=new JSONArray();
-        try{for(BluetoothDevice d:found.values())devices.put(new JSONObject().put("id",d.getAddress()).put("name",foundNames.get(d.getAddress())));}
-        catch(Exception e){error=safe(e);}
-        reply(id,devices,error);
+        if(error!=null){reply(id,null,error);return;}
+        if(id!=prepareId||!foreground)return;
+        if(found.isEmpty()){reply(id,null,"Принтер не найден. Включите его и закройте iLabel. На Android 8–11 проверьте геолокацию.");return;}
+        String[] addresses=found.keySet().toArray(new String[0]),labels=new String[addresses.length];
+        for(int i=0;i<labels.length;i++)labels[i]=foundNames.get(addresses[i])+" · "+addresses[i];
+        printerDialog=new AlertDialog.Builder(this).setTitle("Выберите принтер — он будет запомнен")
+            .setItems(labels,(dialog,index)->{printerDialog=null;if(id!=prepareId||!foreground)return;profile=foundProfiles.get(addresses[index]);try{connect(id,addresses[index]);}catch(Exception e){cancelPreparation(safe(e));}})
+            .setNegativeButton("Отмена",(d,w)->cancelPreparation("Выбор принтера отменён"))
+            .setOnCancelListener(d->cancelPreparation("Выбор принтера отменён")).create();
+        printerDialog.show();
     }
     private void connect(int id,String address)throws Exception{
         if(scanning)throw new IOException("Дождитесь окончания поиска");
+        if(id!=prepareId||!foreground)throw new IOException("Подключение отменено");
         BluetoothDevice device=found.get(address);if(device==null)throw new IOException("Сначала найдите и выберите принтер");
         closeConnection("Новое подключение");connectId=id;mtu=23;discovering=false;
         gatt=device.connectGatt(this,false,callback,BluetoothDevice.TRANSPORT_LE);
@@ -236,7 +273,7 @@ public final class LabelPrintActivity extends Activity {
         if(previous!=null){try{previous.disconnect();previous.close();}catch(Exception ignored){}js("window.onBleDisconnected();");}
     }
     private void reply(int id,Object result,String error){
-        if(id<0)return;js("window.nativeReply("+id+","+(error==null?"null":JSONObject.quote(error))+","+(result==null?"null":result.toString())+");");
+        if(id<0)return;if(id==prepareId){prepareId=-1;permissionId=-1;if(printerDialog!=null){printerDialog.dismiss();printerDialog=null;}}js("window.nativeReply("+id+","+(error==null?"null":JSONObject.quote(error))+","+(result==null?"null":result.toString())+");");
     }
     private void js(String script){if(!destroyed&&web!=null)web.evaluateJavascript(script,null);}
     private static String safe(Exception e){String value=e.getMessage();return value==null?"Ошибка Bluetooth":value.substring(0,Math.min(240,value.length()));}
@@ -245,6 +282,7 @@ public final class LabelPrintActivity extends Activity {
                 .setPositiveButton("Закрыть",(d,w)->finish()).setNegativeButton("Остаться",null).show();
         else super.onBackPressed();
     }
-    @Override protected void onStop(){getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);finishScan("Поиск остановлен");closeConnection("Экран печати закрыт");super.onStop();}
-    @Override protected void onDestroy(){closeConnection("Экран печати закрыт");destroyed=true;ui.removeCallbacksAndMessages(null);if(web!=null){web.removeJavascriptInterface("LabelNative");web.destroy();}super.onDestroy();}
+    @Override protected void onStart(){super.onStart();foreground=true;}
+    @Override protected void onStop(){foreground=false;js("if(window.onPrintScreenStopped)window.onPrintScreenStopped();");cancelPreparation("Экран печати закрыт");getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);finishScan("Поиск остановлен");closeConnection("Экран печати закрыт");super.onStop();}
+    @Override protected void onDestroy(){foreground=false;cancelPreparation("Экран печати закрыт");closeConnection("Экран печати закрыт");destroyed=true;ui.removeCallbacksAndMessages(null);if(web!=null){web.removeJavascriptInterface("LabelNative");web.destroy();}super.onDestroy();}
 }

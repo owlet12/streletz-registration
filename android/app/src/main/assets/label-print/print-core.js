@@ -6,7 +6,7 @@ function options(value){
  if(!Number.isInteger(width)||width<10||width>100||!Number.isInteger(height)||height<6||height>12||!Number.isInteger(copies)||copies<1||copies>20)throw Error('Размер: длина 10–100 мм, ширина 6–12 мм; копий от 1 до 20.');
  return {width,height,copies,rotate:!!value.rotate};
 }
-function text(value){const result=String(value??'').trim();if(!result||result.length>2000)throw Error('Заполните описание (до 2000 символов).');return result;}
+function text(value){const result=String(value??'').trim();if(!result||result.length>2000)throw Error('Введите текст этикетки (до 2000 символов).');return result;}
 function profile(info,meta,task){
  if(!info||![2304,2305].includes(Number(info.modelId))||!meta||meta.model!=='D110'||meta.dpi!==203||meta.printheadPixels!==96||meta.printDirection!=='left'||!task)throw Error('Этот выпуск поддерживает NIIMBOT D110. Модель или протокол подключённого принтера не подтверждены.');
  return {task,dpi:203,head:96,direction:'left',density:2};

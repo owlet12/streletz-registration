@@ -5,9 +5,7 @@
 <title>Печать описания</title><style>
 *{box-sizing:border-box}body{margin:0;padding:20px;font:16px sans-serif;background:#f2f7f9;color:#142a35}h1{font-size:24px;margin:0 0 8px}p{line-height:1.45}.muted{color:#526771;font-size:14px}label{display:block;margin:14px 0 6px;font-weight:600}textarea,input,select,button{font:inherit;border:1px solid #b7c8d0;border-radius:10px;background:white;padding:12px;color:inherit;min-height:48px;width:100%}textarea{resize:vertical;min-height:85px}.row{display:flex;gap:10px}.row>div{flex:1;min-width:0}button{margin-top:12px;font-weight:600}button.primary{background:#16586d;color:white;border-color:#16586d}button:disabled{opacity:.5}.paper{background:#dce6eb;padding:18px;margin:18px 0;border-radius:14px}canvas{display:block;background:white;max-width:100%;width:100%;height:auto;image-rendering:pixelated}.status{padding:14px;background:white;border-radius:12px;white-space:pre-line;line-height:1.5;overflow-wrap:anywhere}[hidden]{display:none!important}
 .font-controls{display:flex;align-items:center;gap:10px}.font-controls button{width:52px;flex-shrink:0;margin:0;font-size:22px}.font-controls input{text-align:center;min-width:0}.check{display:flex;gap:10px;align-items:center;font-weight:400}.check input{width:22px;height:22px;min-height:22px;margin:0}
-</style></head><body><h1>Печать описания</h1><label for="profile">Модель принтера</label><select id="profile"><option value="d110">NIIMBOT D110</option><option value="wp9529">VSON WP9529 (iLabel)</option><option value="wp9539">VSON WP9539 (iLabel)</option></select>
-<p id="profileNote" class="muted">NIIMBOT D110 · Bluetooth · этикетка 12×30 мм по умолчанию</p>
-<label for="description">Текст этикетки</label><textarea id="description" maxlength="2000" readonly></textarea><p class="muted">Чтобы изменить текст, вернитесь в карточку устройства.</p>
+</style></head><body><h1>Печать описания</h1><label for="description">Текст этикетки</label><textarea id="description" maxlength="2000" autocomplete="off" placeholder="Введите текст этикетки"></textarea><p class="muted">Можно изменить или дополнить текст только для этой печати. Описание в проекте не изменится.</p>
 <div class="row"><div><label for="width">Длина, мм</label><input id="width" type="number" min="10" max="100" value="30"></div><div><label for="height">Ширина, мм</label><input id="height" type="number" min="6" max="12" value="12"></div><div><label for="copies">Копий</label><input id="copies" type="number" min="1" max="20" value="1"></div></div>
 <div id="wpMedia" hidden>
 <label for="paper">Тип ленты</label><select id="paper"><option value="gap">Отдельные этикетки с зазором</option><option value="continuous">Непрерывная лента</option></select>
@@ -19,8 +17,8 @@
 <label class="check"><input id="fontAuto" type="checkbox" checked>Подобрать максимальный размер</label>
 <p class="muted">Кнопки − и + включают ручной размер. Предпросмотр показывает текст, который будет напечатан.</p>
 <div class="paper"><canvas id="preview" width="240" height="96"></canvas></div><p id="previewNote" class="muted"></p>
-<button id="scan">Найти принтер</button><label for="devices">Принтер</label><select id="devices"><option value="">Сначала выполните поиск</option></select><button id="connect" disabled>Подключить</button>
-<p id="status" class="status" role="status" aria-live="polite">Принтер не подключён.</p>
-<button id="print" class="primary" disabled>Печатать описание</button><button id="review" hidden>Этикетку проверил — разрешить новое задание</button>
+<p id="status" class="status" role="status" aria-live="polite">Нажмите «Печатать» — принтер подключится автоматически.</p>
+<button id="print" class="primary" disabled>Печатать</button><button id="review" hidden>Этикетку проверил — разрешить новое задание</button>
+<p class="muted">При первом запуске выберите принтер один раз. Для смены принтера удерживайте «Печатать».</p>
 <p class="muted">Если связь прервалась, сначала проверьте этикетку. Повторная печать автоматически не запускается.</p>
 <script src="niimbluelib-0.48.0.min.js"></script><script src="print-core.js"></script><script src="wp9529.js"></script><script src="print.js"></script></body></html>

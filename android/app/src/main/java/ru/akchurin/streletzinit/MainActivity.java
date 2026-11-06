@@ -1743,7 +1743,6 @@ public class MainActivity extends Activity {
         printDescription.setText("Печать описания");
         printDescription.setOnClickListener(v -> {
             String label = card.description.getText().toString().trim();
-            if (label.isEmpty()) { toast("Сначала заполните описание устройства."); return; }
             if (label.length() > 2000) { toast("Для этикетки нужно описание до 2000 символов."); return; }
             Intent printIntent = new Intent(this, LabelPrintActivity.class);
             printIntent.putExtra("description", label);
