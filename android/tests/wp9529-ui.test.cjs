@@ -11,7 +11,7 @@ const model=process.env.PRINTER_PROFILE==='wp9539'?{id:'wp9539',name:'WP9539',pr
  await page.addInitScript(model=>{
   window.fixture={profile:'d110',fw:model.fw,calls:[],writes:[],headers:0,lines:0,polls:0,hold:false,disconnect:false,pending:window.name==='pending'};
   const notify=data=>onBleData(btoa(String.fromCharCode(...data)));
-  window.LabelNative={config:()=>JSON.stringify({width:30,height:12,copies:1,profile:model.id,pending:fixture.pending}),setPrinting:()=>{},saveConfig:()=>true,savePrinterConfig:()=>true,pending:value=>{fixture.pending=value;window.name=value?'pending':'';return true;},request:(id,action,payload)=>{
+  window.LabelNative={config:()=>JSON.stringify({width:30,height:12,copies:1,profile:model.id,pending:fixture.pending}),setPrinting:()=>{},saveConfig:()=>true,saveTextConfig:()=>true,savePrinterConfig:()=>true,pending:value=>{fixture.pending=value;window.name=value?'pending':'';return true;},request:(id,action,payload)=>{
    fixture.calls.push([action,payload]);
    let result={};if(action==='scan'){fixture.profile=payload;result=[{id:'PRINTER',name:payload===model.id?model.prefix+'FIXTURE':'D110 fixture'}];}
    if(action==='connect')result={profile:fixture.profile,name:fixture.wrongName?'95391#FIXTURE':model.prefix+'FIXTURE',maxPayload:20,mtu:23};
@@ -33,7 +33,7 @@ const model=process.env.PRINTER_PROFILE==='wp9539'?{id:'wp9539',name:'WP9539',pr
  await page.locator('#width').fill('100');assert.equal(await page.locator('#preview').getAttribute('width'),'800');await page.locator('#width').fill('30');
  await page.locator('#paper').selectOption('continuous');assert.equal(await page.locator('#gap').isDisabled(),true);await page.locator('#paper').selectOption('gap');
  await page.locator('#gap').fill('0');assert.match(await page.locator('#previewNote').textContent(),/Зазор/);await page.locator('#gap').fill('8.5');
- await connect();assert.match(await page.locator('#status').textContent(),new RegExp(model.version));
+ await connect();assert.match(await page.locator('#status').textContent(),new RegExp(model.name+' подключён'));assert.equal(await page.evaluate(()=>fixture.writes.some(p=>p[0]===0xb2)),false);
  await page.screenshot({path:path.resolve(model.id+'-preview-test.png'),fullPage:true});
  await page.evaluate(()=>fixture.hold=true);await page.locator('#print').click();await page.waitForFunction(()=>fixture.lines===240);
  assert.equal(await page.evaluate(()=>fixture.pending),true);assert.equal(await page.locator('#profile').isDisabled(),true);assert.equal(await page.locator('#print').isDisabled(),true);assert.doesNotMatch(await page.locator('#status').textContent(),/подтвердил завершение/);
@@ -46,13 +46,13 @@ const model=process.env.PRINTER_PROFILE==='wp9539'?{id:'wp9539',name:'WP9539',pr
  await page.locator('#profile').selectOption('d110');await page.waitForFunction(()=>!document.querySelector('#scan').disabled);assert.equal(await page.locator('#review').isVisible(),true);assert.equal(await page.locator('#print').isDisabled(),true);
  await page.reload();await init();assert.equal(await page.locator('#review').isVisible(),true);assert.equal(await page.evaluate(()=>fixture.calls.length),0);
  await page.locator('#review').click();assert.equal(await page.evaluate(()=>fixture.pending),false);assert.equal(await page.evaluate(()=>fixture.writes.length),0);
- // Unsupported firmware only permits read queries, with the detected version visible.
- await page.evaluate(()=>fixture.fw=0x51);await page.locator('#scan').click();await page.waitForFunction(()=>document.querySelector('#devices').value==='PRINTER');await page.locator('#connect').click();await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('V51'));
- assert.equal(await page.locator('#print').isDisabled(),true);assert.equal(await page.evaluate(()=>fixture.writes.every(p=>[1,0xb2].includes(p[0]))),true);
+ // A printer that never provides its firmware can connect using status only.
+ await page.evaluate(()=>fixture.fw=0x51);await page.locator('#scan').click();await page.waitForFunction(()=>document.querySelector('#devices').value==='PRINTER');await page.locator('#connect').click();await page.waitForFunction(()=>!document.querySelector('#print').disabled);
+ assert.equal(await page.evaluate(()=>fixture.writes.every(p=>p[0]===1)),true);
  // Even the same service and firmware cannot identify a different model.
  await page.evaluate(fw=>{fixture.fw=fw;fixture.wrongName=true;fixture.writes=[];},model.fw);
  await page.locator('#scan').click();await page.waitForFunction(()=>document.querySelector('#devices').value==='PRINTER');await page.locator('#connect').click();await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('не соответствует'));
  assert.equal(await page.locator('#print').isDisabled(),true);assert.equal(await page.evaluate(()=>fixture.writes.length),0);
- assert.deepEqual(errors,[]);console.log('PASS '+model.name+' browser UI: profile/media, Cyrillic raster, MTU23 whole commands, idle-only success, disconnect, persistent unknown, profile-switch guard, V51 blocked. Native BLE simulated.');
+ assert.deepEqual(errors,[]);console.log('PASS '+model.name+' browser UI: profile/media, Cyrillic raster, MTU23 whole commands, idle-only success, disconnect, persistent unknown, profile-switch guard, no firmware dependency. Native BLE simulated.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

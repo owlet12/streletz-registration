@@ -65,6 +65,7 @@ public final class LabelPrintActivity extends Activity {
     private final class NativeBridge {
         @JavascriptInterface public String config(){
             try{return new JSONObject().put("width",settings.getInt("width",30)).put("height",settings.getInt("height",12))
+                    .put("fontSize",settings.getInt("fontSize",13)).put("fontAuto",settings.getBoolean("fontAuto",true))
                     .put("copies",settings.getInt("copies",1)).put("profile",settings.getString("profile","d110"))
                     .put("paper",settings.getString("paper","gap")).put("gap",settings.getString("gap","8.5")).put("density",settings.getInt("density",32)).put("pending",settings.getBoolean("pending",false)).toString();}
             catch(Exception e){return "{}";}
@@ -79,6 +80,13 @@ public final class LabelPrintActivity extends Activity {
                 String paper=v.getString("paper");double gap=v.getDouble("gap");int density=v.getInt("density");
                 if(!Arrays.asList("gap","continuous").contains(paper)||!Double.isFinite(gap)||gap<0.1||gap>25.5||!Arrays.asList(24,32,39).contains(density))return false;
                 return settings.edit().putString("profile",model).putString("paper",paper).putString("gap",Double.toString(gap)).putInt("density",density).commit();
+            }catch(Exception e){return false;}
+        }
+        @JavascriptInterface public boolean saveTextConfig(String value){
+            try{
+                JSONObject v=new JSONObject(value);double points=v.getDouble("fontSize");boolean auto=v.getBoolean("fontAuto");
+                if(!Double.isFinite(points)||points!=Math.rint(points)||points<3||points>36)return false;
+                return settings.edit().putInt("fontSize",(int)points).putBoolean("fontAuto",auto).commit();
             }catch(Exception e){return false;}
         }
         @JavascriptInterface public boolean pending(boolean value){return settings.edit().putBoolean("pending",value).commit();}

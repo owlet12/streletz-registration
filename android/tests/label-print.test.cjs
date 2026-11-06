@@ -13,6 +13,15 @@ let checks=0;function check(value,message){assert.ok(value,message);checks++;}
  check(layout.lines.length>1&&layout.size>=8&&layout.lines.length*layout.lineHeight<=86,'text fits inside margins');
  const token='АБВГДЕЖЗ'.repeat(5);check(core.wrap(token,s=>s.length,8).join('')===token,'long identifier split without character loss');
  assert.throws(()=>core.layout('слово '.repeat(300),80,30,(s,size)=>s.length*size*.6));checks++;
+ const metric=(s,size)=>Array.from(s).length*size*.6;
+ const large=core.layout('TEST001',310,86,metric);
+ check(large.size>36,'short label can exceed the old 36-pixel cap');
+ const small=core.layout('TEST001',310,86,metric,{auto:false,points:13});
+ const bigger=core.layout('TEST001',310,86,metric,{auto:false,points:18});
+ check(bigger.size>small.size&&bigger.points===18,'manual font increases actual raster font size');
+ assert.throws(()=>core.layout('TEST001',310,86,metric,{auto:false,points:36}),/не помещается/);checks++;
+ for(const points of [0,37,12.5,NaN]){assert.throws(()=>core.font({auto:false,points}));checks++;}
+ for(const [width,height]of [[310,86],[86,310]]){const result=core.layout(description,width,height,metric);check(result.lines.every(s=>metric(s,result.size)<=width)&&result.lines.length*result.lineHeight<=height,'auto layout fits both orientations');}
  const context={console,setTimeout,clearTimeout,setInterval,clearInterval,TextEncoder,TextDecoder,Uint8Array,DataView};vm.createContext(context);vm.runInContext(fs.readFileSync(path.join(root,'niimbluelib-0.48.0.min.js'),'utf8'),context);const lib=context.niimbluelib;
  for(const id of [2304,2305]){const meta=lib.getPrinterMetaById(id);check(core.profile({modelId:id},meta,lib.findPrintTask(meta.model,1)).task==='D110','real bundled library D110 profile');}
  assert.throws(()=>core.profile({modelId:99},{model:'D110',dpi:203,printheadPixels:96,printDirection:'left'},'D110'));checks++;

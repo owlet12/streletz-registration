@@ -15,7 +15,7 @@ public final class PrinterTransportProfileSelfTest {
         byte[] header={2,(byte)240,0,0,0,0,2,32,30,85,1};
         PrinterTransportProfile.validateWrite("wp9529",header,23);
         PrinterTransportProfile.validateWrite("wp9529",new byte[]{2,80,0,0,0,0,1,24},23);
-        for(int op:new int[]{1,4,0xb2})PrinterTransportProfile.validateWrite("wp9529",new byte[]{(byte)op},23);
+        for(int op:new int[]{1,4})PrinterTransportProfile.validateWrite("wp9529",new byte[]{(byte)op},23);
         byte[] fourLines=new byte[52];fourLines[0]=3;fourLines[3]=4;
         PrinterTransportProfile.validateWrite("wp9529",fourLines,185);blocked(fourLines,23);
         byte[] oneLine=new byte[16];oneLine[0]=3;oneLine[3]=1;
@@ -30,7 +30,7 @@ public final class PrinterTransportProfileSelfTest {
         check(PrinterTransportProfile.matches("wp9539","9539#TEST",false));
         for(String name:new String[]{null,"9539#","95391#TEST","9539A#TEST","9529#TEST","D110"})check(!PrinterTransportProfile.matches("wp9539",name,true));
         for(String selected:new String[]{"wp9539","wp9529"}){
-            for(byte[] forbidden:new byte[][]{{(byte)0xbf,0,0,0,0,0,0},{(byte)0x80},{(byte)0xb5,60,0},{3,0,0,5}}){
+            for(byte[] forbidden:new byte[][]{{(byte)0xb2},{(byte)0xbf,0,0,0,0,0,0},{(byte)0x80},{(byte)0xb5,60,0},{3,0,0,5}}){
                 try{PrinterTransportProfile.validateWrite(selected,forbidden,185);throw new AssertionError();}catch(IllegalArgumentException expected){}
             }
         }

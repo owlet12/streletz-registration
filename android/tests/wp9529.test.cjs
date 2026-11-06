@@ -14,7 +14,7 @@ function fixture(options={}){
   if(options.silent===p[0])return;
   if(p[0]===1){let s=0;if(f.headers&&f.lines===f.expectedLines&&f.finished<f.headers){f.polls++;s=options.busyForever||f.polls<=2?1:0;if(!s)f.finished++;}
    driver.receive(options.status?options.status(s,f):status(s));
-  }else if(p[0]===0xb2)driver.receive(Uint8Array.from([0xb2,options.fw??parseInt(model.firmware.slice(1),16)]));
+  }else if(p[0]===0xb2)driver.receive(Uint8Array.from([0xb2,options.fw??0x50]));
   else if(p[0]===4)driver.receive(Uint8Array.of(4,0));
   else if(p[0]===2){f.headers++;f.expectedLines=p[1]|p[2]<<8;f.lines=0;f.polls=0;if(options.header)options.header(driver,f);driver.receive(Uint8Array.from(options.ack||[0xa5,0x20,3,0,0,0]));}
   else if(p[0]===3){assert.equal(p[1]|p[2]<<8,f.lines);assert.ok(p.length<=transport.maxPayload);assert.equal(p.length,4+p[3]*12);f.lines+=p[3];}
@@ -50,7 +50,7 @@ test('paper error after data keeps unknown',async()=>{const f=fixture({status:(s
 test('busy timeout keeps unknown, no retry',async()=>{const f=fixture({busyForever:true});await assert.rejects(f.run(),/завершение/);assert.equal(f.headers,1);assert.ok(f.unknown);});
 test('failed pending persistence sends no reset/header/raster',async()=>{const f=fixture({persist:()=>false});await assert.rejects(f.run(),/сохранить/);assert.ok(f.writes.every(x=>[1,0xb2].includes(x[0])));});
 test('failed completion persistence leaves unknown',async()=>{const f=fixture({persist:value=>value});await assert.rejects(f.run(),/состояние не сохранено/);assert.ok(f.unknown);assert.equal(f.finished,1);});
-test('unsupported firmware sends only read queries',async()=>{const f=fixture({fw:0x51});await assert.rejects(f.run(),/V51/);assert.ok(f.writes.every(x=>[1,0xb2].includes(x[0])));assert.deepEqual(f.persisted,[]);});
+test('firmware is not queried or required to print',async()=>{const f=fixture({silent:0xb2});await f.run();assert.equal(f.finished,1);assert.ok(f.writes.every(x=>x[0]!==0xb2));});
 test('busy preflight does not cancel another print',async()=>{const f=fixture({status:()=>status(1)});await assert.rejects(f.run(),/занят/);assert.ok(f.writes.every(x=>[1,0xb2].includes(x[0])));assert.deepEqual(f.persisted,[]);});
 test('disconnect after first packet stops additional copies',async()=>{const f=fixture({write:(p,f,d,t)=>{if(p[0]===3){t.connected=false;d.stop(Error('test disconnect'));}}});await assert.rejects(f.run({copies:2}),/disconnect/);assert.equal(f.writes.filter(x=>x[0]===3).length,1);assert.equal(f.headers,1);assert.ok(f.unknown);});
 test('missing ACK times out without retry',async()=>{const f=fixture({silent:2});await assert.rejects(f.run(),/не ответил/);assert.equal(f.headers,0);assert.equal(f.writes.filter(x=>x[0]===2).length,1);assert.ok(f.unknown);});
@@ -66,9 +66,8 @@ test('profile discovery excludes other models and variants',()=>{
  for(const name of [null,model.prefix,'95391#FIXTURE','9539A#FIXTURE','95291#FIXTURE','D110',model.id==='wp9539'?'9529#FIXTURE':'9539#FIXTURE'])assert.equal(wp.matches(model.id,name),false);
  assert.throws(()=>wp.profile('__proto__'));assert.throws(()=>new wp.Driver({},{profile:'unknown'}));
 });
-test('other model firmware never enables printing',async()=>{
- const f=fixture({fw:model.id==='wp9539'?0x50:0x31});await assert.rejects(f.run(),/прошивка|Профиль/);
- assert.ok(f.writes.every(p=>[1,0xb2].includes(p[0])));assert.deepEqual(f.persisted,[]);
+test('unsolicited firmware replies cannot change readiness or stop printing',async()=>{
+ for(const version of [0x31,0x50,0x51]){const f=fixture({write:(p,f,d)=>d.receive(Uint8Array.of(0xb2,version))});await f.run();assert.equal(f.finished,1);assert.ok(f.writes.every(p=>p[0]!==0xb2));}
 });
 test('zero available buffer cannot stream or claim success',async()=>{
  const f=fixture({ack:[0xa5,0,0,0,0,0]});await assert.rejects(f.run(),/буфер/);assert.equal(f.lines,0);assert.ok(f.unknown);

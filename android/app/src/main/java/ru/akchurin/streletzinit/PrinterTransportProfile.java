@@ -30,7 +30,7 @@ final class PrinterTransportProfile {
         if(!isVson(profile))return;
         if(bytes.length>maxPayload(mtu))throw new IllegalArgumentException("Команду VSON нельзя разделять на BLE-пакеты");
         int op=bytes[0]&255;
-        if((op==1||op==4||op==0xb2)&&bytes.length==1)return;
+        if((op==1||op==4)&&bytes.length==1)return;
         if(op==2&&(bytes.length==8||bytes.length==11)){
             int lines=(bytes[1]&255)|((bytes[2]&255)<<8),density=bytes[7]&255;
             boolean continuous=bytes.length==8&&bytes[6]==1;

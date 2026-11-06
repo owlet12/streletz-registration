@@ -35,28 +35,37 @@ class WPClient {
 window.onBleData=value=>{if(client?.connected)try{client.processRawPacket(bytes(value));}catch(e){status('Некорректный ответ принтера: '+e.message);}};
 window.onBleDisconnected=()=>{if(client){client.connected=false;if(client instanceof WPClient)client.driver.stop(Error('Связь с VSON потеряна.'));else client.emit('disconnect',new lib.DisconnectEvent());}detected=null;if(printing||unknown){unknown=true;status('Связь потеряна. Результат печати не подтверждён. Проверьте этикетку.');}else status('Принтер отключён.');controls();};
 function status(value){$('status').textContent=value;}
-function controls(){for(const id of ['profile','width','height','copies','rotation','paper','gap','density','scan','devices','connect'])$(id).disabled=busy||printing;$('connect').disabled=busy||printing||!$('devices').value;$('print').disabled=busy||printing||unknown||!prepared||!detected||!client?.connected;$('review').hidden=!unknown;$('review').disabled=printing||busy;$('height').disabled=busy||printing||isWp();$('gap').disabled=busy||printing||$('paper').value==='continuous';}
+function controls(){for(const id of ['profile','width','height','copies','rotation','paper','gap','density','scan','devices','connect','fontSize','fontAuto','fontMinus','fontPlus'])$(id).disabled=busy||printing;$('connect').disabled=busy||printing||!$('devices').value;$('print').disabled=busy||printing||unknown||!prepared||!detected||!client?.connected;$('review').hidden=!unknown;$('review').disabled=printing||busy;$('height').disabled=busy||printing||isWp();$('gap').disabled=busy||printing||$('paper').value==='continuous';$('fontMinus').disabled=busy||printing||Number($('fontSize').value)<=3;$('fontPlus').disabled=busy||printing||Number($('fontSize').value)>=36;}
 function paint(){prepared=null;try{
  const options=core.options({width:$('width').value,height:$('height').value,copies:$('copies').value,rotate:$('rotation').value==='90'});
  const wp=isWp()?WP9529.media({length:options.width,paper:$('paper').value,gap:$('gap').value,density:$('density').value,copies:options.copies}):null;
+ const font=core.font({auto:$('fontAuto').checked,points:$('fontSize').value});
  const value=core.text($('description').value),canvas=$('preview');canvas.width=wp?options.width*8:Math.round(options.width*203/25.4);canvas.height=wp?96:Math.round(options.height*203/25.4);
  const ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle='black';ctx.save();
  if(options.rotate){ctx.translate(canvas.width,0);ctx.rotate(Math.PI/2);}
  const width=options.rotate?canvas.height:canvas.width,height=options.rotate?canvas.width:canvas.height,margin=5;
- const layout=core.layout(value,width-margin*2,height-margin*2,(s,size)=>{ctx.font=`bold ${size}px sans-serif`;return ctx.measureText(s).width;});
+ const layout=core.layout(value,width-margin*2,height-margin*2,(s,size)=>{ctx.font=`bold ${size}px sans-serif`;return ctx.measureText(s).width;},font);
+ if(font.auto)$('fontSize').value=String(layout.points);
  ctx.font=`bold ${layout.size}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
  let y=(height-layout.lines.length*layout.lineHeight)/2+layout.lineHeight/2;
  for(const line of layout.lines){ctx.fillText(line,width/2,y);y+=layout.lineHeight;}ctx.restore();
  const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);for(let n=0;n<pixels.data.length;n+=4){const value=pixels.data[n]<160?0:255;pixels.data[n]=pixels.data[n+1]=pixels.data[n+2]=value;pixels.data[n+3]=255;}ctx.putImageData(pixels,0,0);
- $('previewNote').textContent=`${options.height}×${options.width} мм · ${options.copies} экз. · перенос строк автоматический`;
+ $('previewNote').textContent=`${options.height}×${options.width} мм · ${options.copies} экз. · ${layout.points} пт · перенос строк автоматический`;
  prepared={canvas,options,wp};
  }catch(e){$('previewNote').textContent=e.message;}controls();}
 window.setDescription=value=>{if(printing)return;$('description').value=String(value);paint();};
 for(const id of ['width','height','copies','rotation','paper','gap','density'])$(id).oninput=paint;
+function saveFont(){
+ try{const f=core.font({auto:$('fontAuto').checked,points:$('fontSize').value});if(!LabelNative.saveTextConfig(JSON.stringify({fontAuto:f.auto,fontSize:f.points})))status('Не удалось сохранить размер шрифта.');}catch{}
+}
+$('fontSize').oninput=()=>{$('fontAuto').checked=false;paint();};
+$('fontSize').onchange=saveFont;
+$('fontAuto').onchange=()=>{if($('fontAuto').checked){const size=Number($('fontSize').value);if(!Number.isInteger(size)||size<3||size>36)$('fontSize').value='13';}paint();saveFont();};
+for(const [id,delta] of [['fontMinus',-1],['fontPlus',1]])$(id).onclick=()=>{if(busy||printing)return;const value=Number($('fontSize').value);$('fontSize').value=String(Math.min(36,Math.max(3,(Number.isFinite(value)?value:13)+delta)));$('fontAuto').checked=false;paint();saveFont();};
 $('devices').onchange=controls;
 function profileUi(){
  $('wpMedia').hidden=!isWp();if(isWp())$('height').value='12';
- $('profileNote').textContent=isWp()?wpProfile().name+' · Bluetooth LE · 12 мм · профиль '+wpProfile().firmware+'. '+(wpProfile().id==='wp9539'?'Первая печать требует проверки на принтере. ':'')+'Закройте iLabel перед подключением.':'NIIMBOT D110 · Bluetooth · этикетка 12×30 мм по умолчанию';
+ $('profileNote').textContent=isWp()?wpProfile().name+' · Bluetooth LE · 12 мм. '+(wpProfile().id==='wp9539'?'Первая печать требует проверки на принтере. ':'')+'Закройте iLabel перед подключением.':'NIIMBOT D110 · Bluetooth · этикетка 12×30 мм по умолчанию';
  paint();
 }
 $('profile').onchange=async()=>{busy=true;controls();try{await client?.disconnect();}catch{}finally{client=null;detected=null;$('devices').replaceChildren();busy=false;status(unknown?'Предыдущее задание не подтверждено. Проверьте этикетку.':'Модель выбрана. Найдите принтер.');profileUi();}};
@@ -65,8 +74,8 @@ $('connect').onclick=async()=>{busy=true;controls();status('Подключени
  if(client)await client.disconnect();detected=null;client=isWp()?new WPClient($('profile').value):new AndroidClient();
  const info=await client.connect($('devices').value);
  if(isWp()){
-  WP9529.ready(info.status);WP9529.firmware(client.profile,info.firmware);
-  detected={head:96};status(client.model.name+' подключён. Прошивка '+info.firmware+', ширина 12 мм.'+(unknown?' Предыдущее задание не подтверждено — проверьте этикетку.':''));
+  WP9529.ready(info.status);
+  detected={head:96};status(client.model.name+' подключён. Ширина печати 12 мм.'+(unknown?' Предыдущее задание не подтверждено — проверьте этикетку.':''));
  }else{detected=core.profile(info,client.getModelMetadata(),client.getPrintTaskType());
  client.on('printprogress',event=>{if(printing)status(`Печать: ${event.page} / ${event.pagesTotal} · ${event.pagePrintProgress}%`);});
  status(`D110 подключён. ПО ${info.softwareVersion??'—'}, аппаратура ${info.hardwareVersion??'—'}.`+(unknown?' Предыдущее задание не подтверждено — проверьте этикетку.':''));}
@@ -75,6 +84,7 @@ $('print').onclick=async()=>{if(busy||printing||unknown||!prepared||!detected||!
  const current=++job,{canvas,options,wp}=prepared,selected=detected,active=client;let task;
  try{
   if(!LabelNative.saveConfig(options.width,options.height,options.copies)||!LabelNative.savePrinterConfig(JSON.stringify({profile:$('profile').value,paper:$('paper').value,gap:isWp()&&$('paper').value==='gap'?Number($('gap').value):8.5,density:Number($('density').value)})))throw Error('Не удалось сохранить параметры печати.');
+  if(!LabelNative.saveTextConfig(JSON.stringify({fontAuto:$('fontAuto').checked,fontSize:Number($('fontSize').value)})))throw Error('Не удалось сохранить размер шрифта.');
   const hooks={persist:value=>{const ok=LabelNative.pending(value);if(ok)unknown=value;return ok;},abort:()=>{active.disconnect().catch(()=>{});}};
   if(wp){
    const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height);
@@ -91,6 +101,6 @@ $('print').onclick=async()=>{if(busy||printing||unknown||!prepared||!detected||!
   if(job===current){unknown=false;status('Принтер подтвердил завершение. Проверьте отпечаток.');}
  }catch(e){status((unknown?'Результат печати не подтверждён. Проверьте этикетку. ':'')+e.message);}finally{printing=false;LabelNative.setPrinting(false);controls();}};
 $('review').onclick=()=>{if(printing)return;if(LabelNative.pending(false)){unknown=false;status('Можно начать новое задание вручную.');controls();}else status('Не удалось сохранить состояние.');};
-try{const config=JSON.parse(LabelNative.config());for(const id of ['width','height','copies','profile','paper','gap','density'])if(config[id]!=null)$(id).value=config[id];unknown=!!config.pending;if(unknown)status('Предыдущее задание не подтверждено. Проверьте этикетку перед новой печатью.');}catch(e){status('Не удалось загрузить параметры печати.');}
+try{const config=JSON.parse(LabelNative.config());for(const id of ['width','height','copies','profile','paper','gap','density','fontSize'])if(config[id]!=null)$(id).value=config[id];$('fontAuto').checked=config.fontAuto!==false;unknown=!!config.pending;if(unknown)status('Предыдущее задание не подтверждено. Проверьте этикетку перед новой печатью.');}catch(e){status('Не удалось загрузить параметры печати.');}
 profileUi();
 })();

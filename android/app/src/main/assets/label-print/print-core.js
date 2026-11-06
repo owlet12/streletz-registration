@@ -25,12 +25,19 @@ function wrap(value,measure,width){
  }
  return result;
 }
-function layout(value,width,height,measure){
- for(let size=36;size>=8;size--){
+function font(value={}){
+ const points=Number(value.points??13),auto=value.auto??true;
+ if(typeof auto!=='boolean'||!Number.isInteger(points)||points<3||points>36)throw Error('Размер шрифта: от 3 до 36 пт.');
+ return {auto,points};
+}
+function layout(value,width,height,measure,setting){
+ const f=font(setting);
+ for(let points=f.auto?36:f.points;points>=(f.auto?3:f.points);points--){
+  const size=Math.round(points*203/72);
   const lines=wrap(text(value),s=>measure(s,size),width),lineHeight=Math.ceil(size*1.18);
-  if(lines.length*lineHeight<=height&&lines.every(s=>measure(s,size)<=width))return {lines,size,lineHeight};
+  if(lines.length*lineHeight<=height&&lines.every(s=>measure(s,size)<=width))return {lines,size,lineHeight,points};
  }
- throw Error('Описание не помещается на этикетке. Увеличьте длину, измените поворот или сократите текст.');
+ throw Error(f.auto?'Описание не помещается на этикетке. Увеличьте длину, измените поворот или сократите текст.':'Текст не помещается при размере '+f.points+' пт. Уменьшите шрифт, включите автоподбор или увеличьте длину этикетки.');
 }
 async function run(task,image,copies,hooks){
  if(!hooks.persist(true))throw Error('Не удалось сохранить состояние задания. Печать не запускалась.');
@@ -45,5 +52,5 @@ async function run(task,image,copies,hooks){
  try{await Promise.race([work,deadline]);if(!hooks.persist(false))throw Error('Принтер закончил задание, но состояние не сохранено. Проверьте этикетку.');}
  finally{clearTimeout(timer);}
 }
-const api={options,text,profile,wrap,layout,run};if(typeof module!=='undefined')module.exports=api;root.LabelPrintCore=api;
+const api={options,text,profile,wrap,font,layout,run};if(typeof module!=='undefined')module.exports=api;root.LabelPrintCore=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

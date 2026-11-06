@@ -5,14 +5,13 @@
 (function(root){'use strict';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const fail=message=>{throw Error(message);};
-// Shared wire format; keep model identity, firmware and feed policy explicit.
+// Shared wire format; keep model identity, feed policy explicit.
 const profiles=Object.freeze({
- wp9529:Object.freeze({id:'wp9529',name:'WP9529',prefix:'9529#',firmware:'V50',feed:0}),
- wp9539:Object.freeze({id:'wp9539',name:'WP9539',prefix:'9539#',firmware:'V31',feed:32})
+ wp9529:Object.freeze({id:'wp9529',name:'WP9529',prefix:'9529#',feed:0}),
+ wp9539:Object.freeze({id:'wp9539',name:'WP9539',prefix:'9539#',feed:32})
 });
 function profile(id='wp9529'){if(!Object.hasOwn(profiles,id))fail('Неизвестный профиль VSON.');return profiles[id];}
 function matches(id,name){const p=profile(id);return typeof name==='string'&&name.startsWith(p.prefix)&&name.length>p.prefix.length;}
-function firmware(id,value){const p=profile(id);if(value!==p.firmware)fail(p.name+': обнаружена '+(value||'неизвестная прошивка')+'. Профиль рассчитан на '+p.firmware+'.');}
 
 function info(raw){
  if(!(raw instanceof Uint8Array)||raw.length<10||raw[0]!==1)fail('Неполный ответ состояния VSON.');
@@ -58,7 +57,7 @@ function packet(rows,start,maximum){
 }
 class Driver{
  constructor(transport,options={}){
-  this.model=profile(options.profile);this.transport=transport;this.pause=false;this.failure=null;this.waiter=null;this.job=false;this.firmware=null;
+  this.model=profile(options.profile);this.transport=transport;this.pause=false;this.failure=null;this.waiter=null;this.job=false;
   this.sleep=options.sleep||sleep;this.now=options.now||Date.now;this.requestMs=options.requestMs||5000;
   this.flowMs=options.flowMs||30000;this.doneMs=options.doneMs||60000;
  }
@@ -88,12 +87,10 @@ class Driver{
  }
  async status(){return info(await this.request(Uint8Array.of(1),[1]));}
  async probe(){
-  const status=await this.status(),fw=await this.request(Uint8Array.of(0xb2),[0xb2]);
-  if(fw.length<2)fail('Принтер не сообщил версию прошивки.');
-  this.firmware='V'+fw[1].toString(16).toUpperCase();return {status,firmware:this.firmware};
+  return {status:await this.status()};
  }
  async preflight(){
-  this.check();firmware(this.model.id,this.firmware);
+  this.check();
   ready(await this.status());
  }
  async waitFlow(){const limit=this.now()+this.flowMs;while(this.pause){this.check();if(this.now()>=limit)fail('VSON не освободил буфер. Результат печати не подтверждён.');await this.sleep(50);}this.check();}
@@ -144,6 +141,6 @@ async function run(driver,rows,options,hooks){
   if(!hooks.persist(false))fail('Принтер закончил задание, но состояние не сохранено. Проверьте этикетку.');
  }catch(e){driver.stop(e);try{hooks.abort();}catch{}throw e;}finally{clearTimeout(timer);}
 }
-const api={profile,matches,firmware,info,ready,media,raster,header,packet,Driver,run};
+const api={profile,matches,info,ready,media,raster,header,packet,Driver,run};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;root.WP9529=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
