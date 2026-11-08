@@ -12,8 +12,8 @@ android {
         applicationId 'ru.akchurin.streletzinit.next'
         minSdk 26
         targetSdk 37
-        versionCode 25
-        versionName '0.5.26'
+        versionCode 26
+        versionName '0.5.27'
     }
 
     buildTypes {

@@ -41,6 +41,26 @@ final class Fieldwork {
         }
         return state;
     }
+    static JSONArray plansForRecord(JSONObject state,String id) throws Exception {
+        JSONArray matches=new JSONArray(),plans=state.getJSONArray("plans");
+        for(int i=0;i<plans.length();i++){JSONObject plan=plans.getJSONObject(i);JSONArray points=plan.getJSONArray("points");
+            for(int n=0;n<points.length();n++)if(id.equalsIgnoreCase(points.getJSONObject(n).optString("recordId"))){matches.put(plan);break;}}
+        return matches;
+    }
+    static void putPoint(JSONObject state,String planId,String recordId,double x,double y) throws Exception {
+        if(recordId==null||recordId.isEmpty()||!Double.isFinite(x)||!Double.isFinite(y)||x<0||x>1||y<0||y>1)throw new IOException("Некорректная отметка плана.");
+        JSONArray plans=state.getJSONArray("plans");
+        for(int i=0;i<plans.length();i++)if(planId.equals(plans.getJSONObject(i).optString("id"))){JSONArray points=plans.getJSONObject(i).getJSONArray("points");
+            for(int n=points.length()-1;n>=0;n--)if(recordId.equalsIgnoreCase(points.getJSONObject(n).optString("recordId")))points.remove(n);
+            points.put(new JSONObject().put("recordId",recordId).put("x",x).put("y",y));return;}
+        throw new IOException("План не найден.");
+    }
+    static void removePoint(JSONObject state,String planId,String recordId) throws Exception {
+        JSONArray plans=state.getJSONArray("plans");
+        for(int i=0;i<plans.length();i++)if(planId.equals(plans.getJSONObject(i).optString("id"))){JSONArray points=plans.getJSONObject(i).getJSONArray("points");
+            for(int n=points.length()-1;n>=0;n--)if(recordId.equalsIgnoreCase(points.getJSONObject(n).optString("recordId")))points.remove(n);return;}
+        throw new IOException("План не найден.");
+    }
     static boolean addScan(JSONObject state,String id,String key,long now) throws Exception {
         id=id.trim().toUpperCase(Locale.ROOT);key=key.trim().toUpperCase(Locale.ROOT);
         if(!id.matches("[0-9A-F]{12}")||!key.matches("(?:[0-9A-F]{8})?")) throw new IOException("Нужны ID из 12 и ключ из 8 шестнадцатеричных символов.");

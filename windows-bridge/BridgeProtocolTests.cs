@@ -81,7 +81,7 @@ namespace StreletzBridge
             {
                 Directory.CreateDirectory(DirectoryPath);
                 Profiles = new PanelProfileStore(Path.Combine(DirectoryPath, "panels.json"));
-                PanelId = Profiles.Save(new PanelProfile { Name = "Test panel", Host = "192.168.0.240", Port = 6344, ModuleId = "FB0000000003" }, "");
+                PanelId = Profiles.Save(new PanelProfile { Name = "Test panel", Host = "192.0.2.240", Port = 6344, ModuleId = "FB0000000003" }, "");
                 Project = MakeProject();
                 Fingerprint = BridgeValues.ProjectFingerprint(Project);
                 Driver.Available = !unavailable;
@@ -379,7 +379,7 @@ namespace StreletzBridge
             internal readonly string NativeFingerprint = new string('f', 64);
             internal readonly PanelProfile Profile = new PanelProfile {
                 Id = "44444444-4444-4444-8444-444444444444", Name = "Test native panel",
-                Host = "192.168.0.240", Port = 6344, ModuleId = "FB0000000003"
+                Host = "192.0.2.240", Port = 6344, ModuleId = "FB0000000003"
             };
             internal readonly RegistrationTarget Target = new RegistrationTarget {
                 OperationId = "55555555-5555-4555-8555-555555555555", ProjectFingerprint = new string('a', 64),
@@ -455,7 +455,7 @@ namespace StreletzBridge
             Assert(BridgeValues.Text(BridgeJson.ParseObject(result.Evidence), "hardwareId") == Sensor, "evidence did not retain actual confirmed ID");
 
             var mismatches = new Dictionary<string, object> {
-                { "host", "192.168.0.241" }, { "port", 6345 }, { "moduleId", "FB0000000002" },
+                { "host", "192.0.2.241" }, { "port", 6345 }, { "moduleId", "FB0000000002" },
                 { "recordIds", new object[] { SecondRecord } }, { "nativeNodeGuid", "not-a-guid" }
             };
             foreach (KeyValuePair<string, object> mismatch in mismatches)
@@ -779,7 +779,7 @@ namespace StreletzBridge
                 const string actualRouteOwner = "44444444-4444-4444-8444-444444444444";
                 f.Driver.ResultDiagnosticDetails = new Dictionary<string, object> {
                     { "check", "endpoint_owner_mismatch" }, { "routeKind", "direct_mk_ip" },
-                    { "actualConnectionKind", "direct_mk_ip" }, { "expectedHost", "192.168.0.240" },
+                    { "actualConnectionKind", "direct_mk_ip" }, { "expectedHost", "192.0.2.240" },
                     { "expectedPort", 6344 }, { "expectedModuleId", "fb0000000003" },
                     { "pluginVersion", "1.0.5.0" }, { "forceUsbScheme", true },
                     { "nativeCompletionState", "blocked" }, { "nativeCompletionCheck", "success_window_unverified" },
@@ -791,7 +791,7 @@ namespace StreletzBridge
                     { "nativeCloudEnabled", false }, { "nativeDirectEnabled", true }, { "nativeRoutePasswordMatched", false },
                     { "expectedAdapterNodeId", expectedAdapter }, { "actualAdapterOwnerId", actualOwner },
                     { "expectedRouteOwnerId", expectedRouteOwner }, { "actualRouteOwnerId", actualRouteOwner },
-                    { "actualHost", "tcp://user:" + secret + "@192.168.0.241" },
+                    { "actualHost", "tcp://user:" + secret + "@192.0.2.241" },
                     { "actualModuleId", secret }, { "rawEndpoint", secret }, { "password", secret },
                     { "deviceKey", secret }, { "unknownNested", new Dictionary<string, object> { { "key", secret } } }
                 };
@@ -811,7 +811,7 @@ namespace StreletzBridge
                     BridgeValues.Flag(details, "autoConfirmSuccessResult"), "reviewed native cleanup diagnostic did not survive public operation");
                 Assert(BridgeValues.Text(details, "check") == "endpoint_owner_mismatch" &&
                     BridgeValues.Text(details, "actualConnectionKind") == "direct_mk_ip" &&
-                    BridgeValues.Text(details, "expectedHost") == "192.168.0.240" &&
+                    BridgeValues.Text(details, "expectedHost") == "192.0.2.240" &&
                     BridgeValues.Number(details, "expectedPort") == 6344 &&
                     BridgeValues.Text(details, "expectedModuleId") == "FB0000000003" &&
                     BridgeValues.Text(details, "pluginVersion") == "1.0.5.0" &&
@@ -935,7 +935,7 @@ namespace StreletzBridge
                 { "projectFingerprint", new string('b', 64) }, { "nativeProjectFingerprint", new string('c', 64) },
                 { "panelId", "77777777-7777-4777-8777-777777777777" },
                 { "nativePanelId", "88888888-8888-4888-8888-888888888888" },
-                { "host", "192.168.0.241" }, { "port", 6345 }, { "moduleId", "FB0000000002" },
+                { "host", "192.0.2.241" }, { "port", 6345 }, { "moduleId", "FB0000000002" },
                 { "expectedHardwareId", "FA0000000002" }
             };
             foreach (KeyValuePair<string, object> omission in omissions)
@@ -990,9 +990,9 @@ namespace StreletzBridge
                 int decryptCalls = 0;
                 var store = new PanelProfileStore(Path.Combine(directory, "panels.json"),
                     value => (byte[])value.Clone(), value => { decryptCalls++; throw new InvalidOperationException("legacy DPAPI inaccessible"); });
-                string id = store.Save(new PanelProfile { Name = "Legacy", Host = "192.168.0.240", Port = 6344, ModuleId = "FB0000000003" }, "test-only");
+                string id = store.Save(new PanelProfile { Name = "Legacy", Host = "192.0.2.240", Port = 6344, ModuleId = "FB0000000003" }, "test-only");
                 Assert(store.Get(id).PasswordMd5 == null && decryptCalls == 0, "native path unnecessarily decrypted legacy credentials");
-                store.Save(new PanelProfile { Id = id, Name = "Renamed", Host = "192.168.0.240", Port = 6344, ModuleId = "FB0000000003" }, null);
+                store.Save(new PanelProfile { Id = id, Name = "Renamed", Host = "192.0.2.240", Port = 6344, ModuleId = "FB0000000003" }, null);
                 Assert(store.Get(id).Name == "Renamed" && decryptCalls == 0, "profile edit required an unused secret");
             }
             finally { Directory.Delete(directory, true); }
@@ -1023,7 +1023,7 @@ namespace StreletzBridge
             return new Dictionary<string, object> {
                 { "nativeNodeGuid", "a1111111-1111-4111-8111-" + number.ToString("x12") },
                 { "segmentGuid", "b2222222-2222-4222-8222-" + number.ToString("x12") },
-                { "displayName", "Панель " + number }, { "host", "192.168.0.240" }, { "port", 6344 },
+                { "displayName", "Панель " + number }, { "host", "192.0.2.240" }, { "port", 6344 },
                 { "moduleId", "FB0000000003" }, { "recordIds", recordIds }
             };
         }
@@ -1071,7 +1071,7 @@ namespace StreletzBridge
             try
             {
                 var store = new PanelProfileStore(Path.Combine(directory, "panels.json"));
-                string manual = store.Save(new PanelProfile { Name = "Manual profile", Host = "192.168.0.240", Port = 6344, ModuleId = "FB0000000003" }, "");
+                string manual = store.Save(new PanelProfile { Name = "Manual profile", Host = "192.0.2.240", Port = 6344, ModuleId = "FB0000000003" }, "");
                 var catalog = ProjectPanelCatalog.FromNative(NativeCatalog(NativeCatalogPanel(1, FirstRecord), NativeCatalogPanel(2, SecondRecord)), MakeProject());
                 store.SynchronizeProjectPanels(catalog, new HashSet<string>());
                 string id = BridgeValues.Text(catalog[0], "projectPanelId");
@@ -1079,13 +1079,13 @@ namespace StreletzBridge
                 Assert(store.List().Length == 3 && store.Get(manual).Name == "Manual profile", "automatic catalog replaced a manual profile");
                 store.SynchronizeProjectPanels(catalog, new HashSet<string>());
                 Assert(store.Get(id).Revision == revision, "identical native catalog changed profile revision");
-                catalog[0]["host"] = "192.168.0.241";
+                catalog[0]["host"] = "192.0.2.241";
                 store.SynchronizeProjectPanels(catalog, new HashSet<string> { id });
-                Assert(store.Get(id).Host == "192.168.0.240" && !PanelProfileStore.MatchesCatalog(store.Get(id), catalog[0]), "active operation route was overwritten");
+                Assert(store.Get(id).Host == "192.0.2.240" && !PanelProfileStore.MatchesCatalog(store.Get(id), catalog[0]), "active operation route was overwritten");
                 store.SynchronizeProjectPanels(catalog, new HashSet<string>());
                 var reopened = new PanelProfileStore(Path.Combine(directory, "panels.json"));
-                Assert(reopened.Get(id).Host == "192.168.0.241" && reopened.Get(id).NativePanelId.Length == 36, "native route binding was not persisted");
-                Throws<InvalidDataException>(() => reopened.Save(new PanelProfile { Id = id, Name = "Manual edit", Host = "192.168.0.242", Port = 6344, ModuleId = "FB0000000003F" }, ""), "auto profile could be silently repurposed");
+                Assert(reopened.Get(id).Host == "192.0.2.241" && reopened.Get(id).NativePanelId.Length == 36, "native route binding was not persisted");
+                Throws<InvalidDataException>(() => reopened.Save(new PanelProfile { Id = id, Name = "Manual edit", Host = "192.0.2.242", Port = 6344, ModuleId = "FB0000000003F" }, ""), "auto profile could be silently repurposed");
             }
             finally { Directory.Delete(directory, true); }
         }
@@ -1268,7 +1268,7 @@ namespace StreletzBridge
             BfxElement(document, document.SelectSingleNode("/Root/Resources/Resource[@id='" + segmentOne + "']/CustomInfo"), "LonInterface", adapterId);
             var adapter = document.SelectSingleNode("/Root/Resources/Resource[@id='" + adapterId + "']/MkIpInfo");
             var address = BfxElement(document, adapter, "ConnectionIpAddress");
-            int[] octets = { 192, 168, 0, 240 };
+            int[] octets = { 192, 0, 2, 240 };
             for (int i = 0; i < octets.Length; i++) BfxElement(document, address, "A" + (i + 1), octets[i].ToString());
             BfxElement(document, adapter, "ConnectionPort", "0"); BfxElement(document, adapter, "EthernetConnectionPort", "6345");
             BfxElement(document, adapter, "ID", Convert.ToBase64String(new byte[] { 0xFB, 0x00, 0x00, 0x00, 0x00, 0x03 }));
@@ -1289,7 +1289,7 @@ namespace StreletzBridge
             Assert(BridgeValues.Text(first, "nativePanelId") == panelOne && BridgeValues.Text(second, "nativePanelId") == panelTwo,
                 "nested segments or misleading names changed sensor ownership");
             Assert(BridgeValues.Text(first, "projectPanelId") == ProjectPanelCatalog.StableId(panelOne, segmentOne), "BFX and live native panel identities diverged");
-            Assert(BridgeValues.Text(first, "host") == "192.168.0.240" && BridgeValues.Number(first, "port") == 6345 && BridgeValues.Text(first, "moduleId") == "FB0000000003",
+            Assert(BridgeValues.Text(first, "host") == "192.0.2.240" && BridgeValues.Number(first, "port") == 6345 && BridgeValues.Text(first, "moduleId") == "FB0000000003",
                 "serialized EthernetAddress, port fallback or six-byte MK-IP ID was read incorrectly");
             Assert(BridgeValues.Text(second, "host") == "" && BridgeValues.Number(second, "port") == 0, "panel without a route borrowed another panel's MK-IP");
             Assert(panels.All(panel => !BridgeValues.Flag(panel, "available")) && !BridgeJson.Serialize(project).Contains("must-not-export"),
@@ -1313,7 +1313,7 @@ namespace StreletzBridge
                 BfxReplaceResourceType(document, panelOne, controllerType);
                 var typedPanels = BfxPanelCatalog.Read(document, MakeProject());
                 var typedOwner = typedPanels.Single(panel => ProjectPanelCatalog.Contains(panel, FirstRecord));
-                Assert(BridgeValues.Text(typedOwner, "nativePanelId") == panelOne && BridgeValues.Text(typedOwner, "host") == "192.168.0.240",
+                Assert(BridgeValues.Text(typedOwner, "nativePanelId") == panelOne && BridgeValues.Text(typedOwner, "host") == "192.0.2.240",
                     "real serializer payload root lost a supported controller or route: " + controllerType);
             }
             document.SelectSingleNode("/Root/Resources/Resource[@id='" + panelOne + "']/CustomInfo/ClassType").InnerText = "KS.CustomInfo";
@@ -1674,6 +1674,7 @@ namespace StreletzBridge
         private static int Main()
         {
             var tests = new Dictionary<string, Action> {
+                { "Windows plans: limits, project isolation and Android envelope", PortablePlansSelfTests.Run },
                 { "HTTP encrypted boundary, invalid input, bounded body, no retry", HttpGatewaySelfTests.Envelope },
                 { "HTTP portable settings, no secrets, explicit enable and valid ports", HttpGatewaySelfTests.Settings },
                 { "HTTP uses shared coordinator: read-only project, stale rejection, cross-transport dedup", EmbeddedHttpUsesCoordinator },

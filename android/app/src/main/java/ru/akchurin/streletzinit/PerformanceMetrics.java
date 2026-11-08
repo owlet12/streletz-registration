@@ -21,7 +21,7 @@ final class PerformanceMetrics {
                     .put("runs",s[0]).put("averageMs",s[0]==0?0:s[1]/1e6/s[0]).put("maximumMs",s[2]/1e6)
                     .put("lastMs",s[3]/1e6).put("totalItems",s[4]).put("unsuccessfulRuns",s[5]).put("lastItems",s[6]));
         }
-        return new JSONObject().put("format","streletz-performance").put("version",1).put("appVersion","0.5.26")
+        return new JSONObject().put("format","streletz-performance").put("version",1).put("appVersion","0.5.27")
                 .put("scope","current_process").put("measurements",entries);
     }
 }

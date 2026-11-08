@@ -23,6 +23,8 @@
     <Compile Include="BfxPanelCatalog.cs" />
     <Compile Include="BfxProjectUpdate.cs" />
     <Compile Include="ProjectSyncSnapshot.cs" />
+    <Compile Include="PortablePlans.cs" />
+    <Compile Include="PortablePlansSelfTests.cs" />
     <Compile Include="PanelRouteMetadata.cs" />
     <Compile Include="PanelDiagnosticsSelfTests.cs" />
     <Compile Include="RegistrationRecoverySelfTests.cs" />

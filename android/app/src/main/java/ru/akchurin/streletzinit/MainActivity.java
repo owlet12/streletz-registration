@@ -1749,6 +1749,12 @@ public class MainActivity extends Activity {
             startActivity(printIntent);
         });
         form.addView(printDescription, matchWrap());
+        Button openDevicePlan = new Button(this);
+        openDevicePlan.setText("Открыть план");
+        openDevicePlan.setAllCaps(false);
+        openDevicePlan.setOnClickListener(v -> showDevicePlan(device));
+        form.addView(openDevicePlan, matchWrap());
+
 
 
         form.addView(fieldLabel("Этап работы"), matchWrap());
@@ -3741,6 +3747,13 @@ public class MainActivity extends Activity {
     private void showPlans(){withFieldwork(state->{JSONArray plans=state.optJSONArray("plans");String[] names=new String[plans.length()];for(int i=0;i<names.length;i++)names[i]=plans.optJSONObject(i).optString("name","План");
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Планы помещений · "+names.length).setItems(names,(d,n)->openPlan(plans.optJSONObject(n).optString("id"))).setPositiveButton("Добавить PNG/JPEG",(d,w)->{
             planFingerprint=projectFingerprint;Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*");intent.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"image/png","image/jpeg"});startActivityForResult(intent,IMPORT_PLAN);
+        }).setNeutralButton("Удалить план",(d,w)->{
+            if(names.length==0){toast("Планы не добавлены.");return;}
+            AlertDialog pick=new AlertDialog.Builder(this).setTitle("Какой план удалить?").setItems(names,(choice,n)->{
+                String id=plans.optJSONObject(n).optString("id");
+                AlertDialog confirm=new AlertDialog.Builder(this).setTitle("Удалить план и отметки?").setMessage("Устройства останутся в проекте.")
+                    .setNegativeButton("Отмена",null).setPositiveButton("Удалить",(c,v)->changeFieldwork(data->{JSONArray items=data.getJSONArray("plans");for(int i=items.length()-1;i>=0;i--)if(id.equals(items.getJSONObject(i).optString("id")))items.remove(i);},this::showPlans)).create();showFeature(confirm);
+            }).setNegativeButton("Отмена",null).create();showFeature(pick);
         }).setNegativeButton("Закрыть",null).create();showFeature(dialog);
     });}
     private void importPlan(Uri uri)throws Exception {
@@ -3759,7 +3772,24 @@ public class MainActivity extends Activity {
             },this::showPlans);
         }).create();showFeature(dialog);
     }
-    private void openPlan(String planId){
+    private void showDevicePlan(Device device){
+        String recordId=device.id;
+        withFieldwork(state->{try{
+            JSONArray matches=Fieldwork.plansForRecord(state,recordId),all=state.getJSONArray("plans");
+            JSONArray choices=matches.length()>0?matches:all;
+            if(choices.length()==0){
+                AlertDialog empty=new AlertDialog.Builder(this).setTitle("План пока не добавлен")
+                    .setMessage("Добавьте PNG/JPEG в меню «Планы помещений» или загрузите проект с планами из Windows.")
+                    .setPositiveButton("Планы помещений",(d,w)->showPlans()).setNegativeButton("Закрыть",null).create();showFeature(empty);return;
+            }
+            if(choices.length()==1){openPlan(choices.getJSONObject(0).getString("id"),recordId,matches.length()==0);return;}
+            String[] names=new String[choices.length()];for(int i=0;i<names.length;i++)names[i]=choices.getJSONObject(i).optString("name","План");
+            AlertDialog picker=new AlertDialog.Builder(this).setTitle(matches.length()>0?"Планы устройства":"Выберите план для устройства")
+                .setItems(names,(d,n)->openPlan(choices.optJSONObject(n).optString("id"),recordId,matches.length()==0)).setNegativeButton("Отмена",null).create();showFeature(picker);
+        }catch(Exception e){reportManualFileResult(e,"");}});
+    }
+    private void openPlan(String planId){openPlan(planId,"",false);}
+    private void openPlan(String planId,String focusRecord,boolean beginPlacement){
         String raw=fieldworkRaw(),scope=projectFingerprint;ExportSnapshot snapshot=captureExport();JSONObject[] plan={null};android.graphics.Bitmap[] bitmap={null};Map<String,Integer> states=new HashMap<>();Map<String,String> labels=new HashMap<>();
         try{runFileWork("Открытие плана",()->{
             JSONArray plans=Fieldwork.read(raw).getJSONArray("plans");for(int i=0;i<plans.length();i++)if(planId.equals(plans.getJSONObject(i).optString("id")))plan[0]=plans.getJSONObject(i);if(plan[0]==null)throw new IOException("План не найден.");
@@ -3769,13 +3799,48 @@ public class MainActivity extends Activity {
             bitmap[0]=android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.length,opts);if(bitmap[0]==null)throw new IOException("Изображение плана повреждено.");
             JSONObject backup=snapshot.build();List<WorkReport.Row> report=WorkReport.rows(backup);JSONArray records=backup.getJSONArray("records");for(int i=0;i<records.length();i++){JSONObject row=records.getJSONObject(i);String id=row.getString("id");labels.put(id,ImportPreview.display(row));states.put(id,report.get(i).complete?2:row.optJSONObject("registration")!=null||row.optInt("stage")>0||!row.optString("serial").isEmpty()?1:0);}
         },error->{if(error!=null){if(bitmap[0]!=null)bitmap[0].recycle();reportManualFileResult(error,"");return;}if(!scope.equals(projectFingerprint)){bitmap[0].recycle();return;}
-            LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);form.setPadding(dp(12),0,dp(12),0);form.addView(text("– Не привязано   ? Ожидает проверки   ✓ Подтверждено и сохранено\nНажмите свободное место для размещения; значок — для карточки.",12,color("text_secondary"),false));
-            AlertDialog[] owner={null};FloorPlanView view=new FloorPlanView(this,bitmap[0],plan[0].optJSONArray("points"),labels,states,(record,x,y)->{owner[0].dismiss();if(!record.isEmpty()){Device device=findById(record);if(device!=null){
-                AlertDialog actions=new AlertDialog.Builder(this).setTitle(getDisplayName(device)).setItems(new String[]{"Открыть карточку","Убрать с плана"},(d,n)->{if(n==0)editDevice(device);else changeFieldwork(state->{JSONArray plans=state.getJSONArray("plans");for(int i=0;i<plans.length();i++)if(planId.equals(plans.getJSONObject(i).optString("id"))){JSONArray points=plans.getJSONObject(i).getJSONArray("points");for(int k=points.length()-1;k>=0;k--)if(record.equals(points.getJSONObject(k).optString("recordId")))points.remove(k);}},()->openPlan(planId));}).setNegativeButton("Назад",(d,w)->openPlan(planId)).create();showFeature(actions);
-            }else toast("Устройство отсутствует в проекте.");}else chooseDevice(device->changeFieldwork(state->{JSONArray plans=state.getJSONArray("plans");for(int i=0;i<plans.length();i++)if(planId.equals(plans.getJSONObject(i).optString("id"))){JSONArray points=plans.getJSONObject(i).getJSONArray("points");for(int n=points.length()-1;n>=0;n--)if(device.id.equalsIgnoreCase(points.getJSONObject(n).optString("recordId")))points.remove(n);points.put(new JSONObject().put("recordId",device.id).put("x",x).put("y",y));}},()->openPlan(planId)));});
-            form.addView(view,new LinearLayout.LayoutParams(-1,dp(400)));owner[0]=new AlertDialog.Builder(this).setTitle(plan[0].optString("name")).setView(form).setNegativeButton("Закрыть",null).setNeutralButton("Удалить план",(d,w)->{
-                AlertDialog confirm=new AlertDialog.Builder(this).setTitle("Удалить план и его отметки?").setMessage("Записи устройств останутся в проекте.").setNegativeButton("Отмена",null).setPositiveButton("Удалить",(a,b)->changeFieldwork(state->{JSONArray plans=state.getJSONArray("plans");for(int i=plans.length()-1;i>=0;i--)if(planId.equals(plans.getJSONObject(i).optString("id")))plans.remove(i);},this::showPlans)).create();showFeature(confirm);
-            }).create();featureDialog=owner[0];owner[0].setOnDismissListener(d->{if(featureDialog==owner[0])featureDialog=null;view.setVisibility(View.GONE);bitmap[0].recycle();});owner[0].show();
+
+            LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);form.setPadding(dp(12),dp(8),dp(12),dp(8));
+            LinearLayout heading=new LinearLayout(this);heading.setGravity(Gravity.CENTER_VERTICAL);
+            TextView title=text(plan[0].optString("name"),18,color("text_primary"),true);heading.addView(title,new LinearLayout.LayoutParams(0,-2,1));
+            Button close=new Button(this);close.setText("Закрыть");heading.addView(close);form.addView(heading);
+            TextView hint=text("Два пальца — масштаб · один — перемещение",12,color("text_secondary"),false);form.addView(hint);
+            LinearLayout zoomBar=new LinearLayout(this);zoomBar.setGravity(Gravity.CENTER_VERTICAL);
+            Button minus=new Button(this);minus.setText("−");Button plus=new Button(this);plus.setText("+");Button fit=new Button(this);fit.setText("Весь план");
+            TextView percent=text("100%",13,color("text_primary"),false);percent.setGravity(Gravity.CENTER);
+            zoomBar.addView(minus,new LinearLayout.LayoutParams(dp(52),-2));zoomBar.addView(percent,new LinearLayout.LayoutParams(0,-2,1));zoomBar.addView(plus,new LinearLayout.LayoutParams(dp(52),-2));zoomBar.addView(fit);form.addView(zoomBar);
+            AlertDialog[] owner={null};String[] placing={beginPlacement?focusRecord:""};FloorPlanView[] canvas={null};
+            FloorPlanView view=new FloorPlanView(this,bitmap[0],plan[0].optJSONArray("points"),labels,states,(record,x,y)->{
+                if(!scope.equals(projectFingerprint)||!owner[0].isShowing())return;
+                if(!placing[0].isEmpty()){
+                    if(!record.isEmpty()&&!record.equalsIgnoreCase(placing[0])){toast("Это место занято. Нажмите рядом.");return;}
+                    String target=placing[0];if(findById(target)==null){toast("Устройство отсутствует в проекте.");return;}
+                    owner[0].dismiss();changeFieldwork(state->Fieldwork.putPoint(state,planId,target,x,y),()->openPlan(planId,target,false));return;
+                }
+                if(record.isEmpty())return;Device selected=findById(record);if(selected==null){toast("Устройство отсутствует в проекте.");return;}
+                boolean cardOpen=activeCard!=null&&activeCard.dialog!=null&&activeCard.dialog.isShowing();
+                String[] actions=cardOpen?new String[]{"Переместить отметку","Убрать с плана"}:new String[]{"Открыть карточку","Переместить отметку","Убрать с плана"};
+                new AlertDialog.Builder(this).setTitle(getDisplayName(selected)).setItems(actions,(d,n)->{
+                    int action=cardOpen?n+1:n;
+                    if(action==0){owner[0].dismiss();editDevice(selected);}
+                    else if(action==1){placing[0]=record;canvas[0].place(true);hint.setText("Нажмите новое место: "+getDisplayName(selected));}
+                    else{owner[0].dismiss();changeFieldwork(state->Fieldwork.removePoint(state,planId,record),()->openPlan(planId,focusRecord,false));}
+                }).setNegativeButton("Назад",null).show();
+            });canvas[0]=view;
+            view.place(beginPlacement);view.focus(focusRecord);if(!focusRecord.isEmpty())hint.setText((beginPlacement?"Нажмите место: ":"Устройство: ")+labels.getOrDefault(focusRecord,focusRecord));
+            view.onScaleChanged(()->{percent.setText(view.percent()+"%");minus.setEnabled(view.percent()>100);plus.setEnabled(view.percent()<800);});
+            minus.setOnClickListener(v->view.zoom(1/1.5f));plus.setOnClickListener(v->view.zoom(1.5f));fit.setOnClickListener(v->view.fit());
+            form.addView(view,new LinearLayout.LayoutParams(-1,0,1));
+            form.addView(text("– Не привязано   ? Ожидает проверки   ✓ Подтверждено и сохранено",12,color("text_secondary"),false));
+            Button place=new Button(this);place.setAllCaps(false);place.setText(focusRecord.isEmpty()?"Разместить устройство":"Разместить это устройство");form.addView(place);
+            place.setOnClickListener(v->{if(!focusRecord.isEmpty()){placing[0]=focusRecord;view.place(true);hint.setText("Нажмите место: "+labels.getOrDefault(focusRecord,focusRecord));}else{
+                owner[0].dismiss();chooseDevice(device->openPlan(planId,device.id,true));}});
+            Button cancelPlace=new Button(this);cancelPlace.setText("Режим просмотра");cancelPlace.setAllCaps(false);form.addView(cancelPlace);
+            cancelPlace.setOnClickListener(v->{placing[0]="";view.place(false);hint.setText("Два пальца — масштаб · один — перемещение");});
+            owner[0]=new AlertDialog.Builder(this).create();owner[0].setView(form,0,0,0,0);featureDialog=owner[0];
+            close.setOnClickListener(v->owner[0].dismiss());
+            owner[0].setOnDismissListener(d->{if(featureDialog==owner[0])featureDialog=null;view.setVisibility(View.GONE);bitmap[0].recycle();});owner[0].show();
+            if(owner[0].getWindow()!=null)owner[0].getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT);
         });}catch(Exception e){reportManualFileResult(e,"");}
     }
 

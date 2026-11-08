@@ -18,8 +18,8 @@ using System.Web.Script.Serialization;
 using System.Windows.Forms;
 using System.Xml;
 
-[assembly: AssemblyVersion("0.5.20.0")]
-[assembly: AssemblyFileVersion("0.5.20.0")]
+[assembly: AssemblyVersion("0.5.27.0")]
+[assembly: AssemblyFileVersion("0.5.27.0")]
 
 namespace StreletzBridge
 {
@@ -125,7 +125,7 @@ namespace StreletzBridge
                 driver, Path.Combine(stateDirectory, "registration-journal.json"), ProtocolV3.JournalIdentityKey(pairingCode),
                 savePanelCatalog: SavePanelCatalog);
             registrations.Changed += RefreshRegistrationStatus;
-            Text = "Стрелец · Мост для Windows · 0.5.20";
+            Text = "Стрелец · Мост для Windows · 0.5.27";
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(980, 620);
             Size = new Size(1280, 760);
@@ -144,8 +144,10 @@ namespace StreletzBridge
             receiverButton = MakeButton("Включить обмен", 165);
             Button panelsButton = MakeButton("Панели…", 100);
             Button cancelRegistration = MakeButton("Отменить регистрацию", 175);
+            Button plansButton = MakeButton("Планы…", 100);
+            plansButton.Click += delegate { EditPlans(); };
             Button httpButton = MakeButton("KeenDNS…", 120);
-            actions.Controls.AddRange(new Control[] { exportBfx, updateBfx, open, compare, saveCopy, csv, panelsButton, receiverButton, httpButton, cancelRegistration });
+            actions.Controls.AddRange(new Control[] { exportBfx, updateBfx, open, compare, saveCopy, csv, plansButton, panelsButton, receiverButton, httpButton, cancelRegistration });
             httpButton.Click += delegate { ConfigureHttp(); };
             header.Controls.AddRange(new Control[] { title, hint, actions });
 
@@ -420,6 +422,32 @@ namespace StreletzBridge
                 if (open.ShowDialog(this) != DialogResult.OK) return;
                 RunBusy("Открытие проекта…", delegate { LoadIntoGrid(ProjectFiles.Load(open.FileName), open.FileName); });
             }
+        }
+
+        private void EditPlans()
+        {
+            if (!RequireProject()) return;
+            RunBusy("Открытие планов…", delegate {
+                long revision;var baseline=registrations.ReadProjectSnapshot(out revision);
+                string originalPath;lock(projectGuard)originalPath=projectPath;
+                string fingerprint=BridgeValues.ProjectFingerprint(baseline);
+                using(var dialog=new PortablePlansDialog(PortablePlans.Read(baseline)))
+                {
+                    UseWaitCursor=false;
+                    if(dialog.ShowDialog(this)!=DialogResult.OK)return;
+                    registrations.RunProjectMutation(revision,delegate {
+                        lock(projectGuard)
+                        {
+                            if(project==null||fingerprint!=BridgeValues.ProjectFingerprint(project)||!String.Equals(originalPath,projectPath,StringComparison.OrdinalIgnoreCase))
+                                throw new InvalidOperationException("Проект изменился. Откройте планы заново.");
+                            var updated=PortablePlans.Apply(project,dialog.Result);
+                            // Save first: failure must leave the currently served project untouched.
+                            ProjectFiles.Save(projectPath,updated);project=updated;
+                        }
+                    });
+                    status.Text="Планы сохранены. В APK нажмите «Загрузить проект из Windows», затем «Открыть план» в карточке устройства.";
+                }
+            });
         }
 
         private void SaveProjectCopy()

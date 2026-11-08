@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <StartupObject>StreletzBridge.PlanImageSelfTest</StartupObject>
+    <AssemblyName>StreletzBridge.PlanImageTests</AssemblyName>
+    <RootNamespace>StreletzBridge</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <LangVersion>7.3</LangVersion>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Xml" />
+    <Reference Include="System.Security" />
+    <Compile Include="Program.cs" />
+    <Compile Include="PlanImageSelfTest.cs" />
+    <Compile Include="ProtocolV3.cs" />
+    <Compile Include="HttpGateway.cs" />
+    <Compile Include="HttpGatewaySettings.cs" />
+    <Compile Include="HttpGatewayWindows.cs" />
+    <Compile Include="PanelProfiles.cs" />
+    <Compile Include="RegistrationCoordinator.cs" />
+    <Compile Include="RegistrationDiagnosticData.cs" />
+    <Compile Include="PanelRegistrationDriver.cs" />
+    <Compile Include="ProjectPanelCatalog.cs" />
+    <Compile Include="BfxPanelCatalog.cs" />
+    <Compile Include="BfxProjectUpdate.cs" />
+    <Compile Include="ProjectSyncSnapshot.cs" />
+    <Compile Include="PortablePlans.cs" />
+    <Compile Include="PortablePlansDialog.cs" />
+    <Compile Include="PanelRouteMetadata.cs" />
+  </ItemGroup>
+</Project>

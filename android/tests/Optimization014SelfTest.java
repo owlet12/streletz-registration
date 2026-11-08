@@ -112,7 +112,7 @@ public final class Optimization014SelfTest {
         check(entry.getLong("totalItems")==12&&entry.getLong("unsuccessfulRuns")==1,"counts wrong");
         Set<String> fields=new HashSet<>(Arrays.asList("task","runs","averageMs","maximumMs","lastMs","totalItems","unsuccessfulRuns","lastItems"));
         check(entry.keySet().equals(fields),"report contains unexpected free text fields");
-        check(report.keySet().equals(new HashSet<>(Arrays.asList("format","version","appVersion","scope","measurements"))) && report.getString("appVersion").equals("0.5.26"),"report schema or app version incorrect");
+        check(report.keySet().equals(new HashSet<>(Arrays.asList("format","version","appVersion","scope","measurements"))) && report.getString("appVersion").equals("0.5.27"),"report schema or app version incorrect");
         Thread[] writers=new Thread[4];for(int i=0;i<writers.length;i++){writers[i]=new Thread(()->{for(int j=0;j<1000;j++)metrics.record(PerformanceMetrics.Task.QR_DECODE,10,1,true);});writers[i].start();}
         for(Thread thread:writers)thread.join();JSONArray values=metrics.report().getJSONArray("measurements");
         check(values.length()==2,"metric rows grew per event");JSONObject camera=values.getJSONObject(1);
