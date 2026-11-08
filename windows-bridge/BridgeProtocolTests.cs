@@ -1675,6 +1675,7 @@ namespace StreletzBridge
         {
             var tests = new Dictionary<string, Action> {
                 { "Windows plans: limits, project isolation and Android envelope", PortablePlansSelfTests.Run },
+                { "Plan save recovery and occupied files", PlanProjectStorageSelfTests.Run },
                 { "HTTP encrypted boundary, invalid input, bounded body, no retry", HttpGatewaySelfTests.Envelope },
                 { "HTTP portable settings, no secrets, explicit enable and valid ports", HttpGatewaySelfTests.Settings },
                 { "HTTP uses shared coordinator: read-only project, stale rejection, cross-transport dedup", EmbeddedHttpUsesCoordinator },

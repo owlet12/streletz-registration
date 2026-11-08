@@ -8,6 +8,7 @@ using System.IO;
 using System.Windows.Forms;
 using System.Reflection;
 using System.Linq;
+using System.Threading.Tasks;
 namespace StreletzBridge
 {
     internal static class PlanImageSelfTest
@@ -62,9 +63,27 @@ namespace StreletzBridge
                     using(var screenshot=new Bitmap(dialog.Width,dialog.Height)){dialog.DrawToBitmap(screenshot,new Rectangle(0,0,screenshot.Width,screenshot.Height));screenshot.Save(Path.Combine(dir,"windows-plans-dialog.png"),ImageFormat.Png);}
                     dialog.Size=dialog.MinimumSize;Application.DoEvents();using(var screenshot=new Bitmap(dialog.Width,dialog.Height)){dialog.DrawToBitmap(screenshot,new Rectangle(0,0,screenshot.Width,screenshot.Height));screenshot.Save(Path.Combine(dir,"windows-plans-small.png"),ImageFormat.Png);}
                     Check(BridgeJson.Serialize(fields)==before);var saved=PortablePlans.Apply(project,dialog.Result);ProjectFiles.Save(transfer,saved);Check(BridgeValues.Array((Dictionary<string,object>)BridgeValues.Array(PortablePlans.Read(ProjectFiles.Load(transfer)),"plans")[0],"points").Length==3);
-                    Descendants(dialog).OfType<Button>().First(b=>b.Text=="Сохранить планы").PerformClick();Check(dialog.DialogResult==DialogResult.OK);
+                    // Production .NET Framework 4.8 path, not just the net8 core harness.
+                    string fileBefore=File.ReadAllText(transfer);var changed=BridgeValues.Copy(saved);changed["planSaveTest"]="new copy";
+                    using(var locked=new FileStream(transfer,FileMode.Open,FileAccess.Read,FileShare.Read))
+                    {
+                        var copyResult=ProjectFiles.SavePlans(transfer,changed,false);
+                        Check(copyResult.UsedNewCopy&&File.ReadAllText(transfer)==fileBefore&&File.ReadAllText(copyResult.BackupPath)==fileBefore);
+                        Check(BridgeValues.Text(ProjectFiles.Load(copyResult.Path),"planSaveTest")=="new copy");
+                    }
+                    var save=Descendants(dialog).OfType<Button>().First(b=>b.Text=="Сохранить планы");
+                    string staged=BridgeJson.Serialize(dialog.Result);int calls=0;
+                    dialog.PersistAsync=(state,copy)=>{calls++;throw new IOException("Тест: исходный файл занят");};
+                    save.PerformClick();Application.DoEvents();Check(calls==1&&dialog.Visible&&dialog.DialogResult!=DialogResult.OK&&dialog.LastSaveError.Contains("исходный файл занят"));Check(BridgeJson.Serialize(dialog.Result)==staged);
+                    using(var screenshot=new Bitmap(dialog.Width,dialog.Height)){dialog.DrawToBitmap(screenshot,new Rectangle(0,0,screenshot.Width,screenshot.Height));screenshot.Save(Path.Combine(dir,"windows-plans-save-error.png"),ImageFormat.Png);}
+                    // Cancellation of Save As keeps the same editor and all edits.
+                    dialog.PersistAsync=(state,copy)=>Task.FromResult(false);Descendants(dialog).OfType<Button>().First(b=>b.Text=="Сохранить как…").PerformClick();Application.DoEvents();Check(dialog.Visible&&BridgeJson.Serialize(dialog.Result)==staged);
+                    // Busy writer cannot close the dialog; a successful retry closes only afterwards.
+                    var completion=new TaskCompletionSource<bool>();dialog.PersistAsync=(state,copy)=>completion.Task;
+                    save.PerformClick();Application.DoEvents();Check(dialog.Visible&&!save.Enabled);dialog.Close();Check(dialog.Visible);
+                    completion.SetResult(true);Application.DoEvents();Check(dialog.DialogResult==DialogResult.OK);
                 }
-                Console.WriteLine("PASS plan images: PNG to bounded JPEG, invalid image rejected, click placement, drag, pan, zoom, invalid drop, search/type filters, undo, staged edits, real s3project save/load and two WinForms renders; no bridge or hardware started.");return 0;
+                Console.WriteLine("PASS plan images: placement, drag, pan, zoom, filters, undo, s3project round-trip, net48 locked-file copy; failed save keeps editor/points, cancelled copy keeps edits, pending save prevents close, retry closes after success; three WinForms renders, no bridge or hardware started.");return 0;
             }
             catch(Exception e){Console.Error.WriteLine(e);return 1;}
         }

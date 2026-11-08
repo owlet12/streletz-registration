@@ -14,12 +14,13 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 using System.Xml;
 
-[assembly: AssemblyVersion("0.5.28.0")]
-[assembly: AssemblyFileVersion("0.5.28.0")]
+[assembly: AssemblyVersion("0.5.29.0")]
+[assembly: AssemblyFileVersion("0.5.29.0")]
 
 namespace StreletzBridge
 {
@@ -125,7 +126,7 @@ namespace StreletzBridge
                 driver, Path.Combine(stateDirectory, "registration-journal.json"), ProtocolV3.JournalIdentityKey(pairingCode),
                 savePanelCatalog: SavePanelCatalog);
             registrations.Changed += RefreshRegistrationStatus;
-            Text = "Стрелец · Мост для Windows · 0.5.28";
+            Text = "Стрелец · Мост для Windows · 0.5.29";
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(980, 620);
             Size = new Size(1280, 760);
@@ -431,21 +432,42 @@ namespace StreletzBridge
                 long revision;var baseline=registrations.ReadProjectSnapshot(out revision);
                 string originalPath;lock(projectGuard)originalPath=projectPath;
                 string fingerprint=BridgeValues.ProjectFingerprint(baseline);
+                string originalFields=BridgeJson.Serialize(PortablePlans.Read(baseline));
                 using(var dialog=new PortablePlansDialog(PortablePlans.Read(baseline),baseline))
                 {
                     UseWaitCursor=false;
-                    if(dialog.ShowDialog(this)!=DialogResult.OK)return;
-                    registrations.RunProjectMutation(revision,delegate {
-                        lock(projectGuard)
+                    PlanSaveResult saved=null;
+                    dialog.PersistAsync=async (fields,copy)=>{
+                        string destination=originalPath;
+                        if(copy)using(var chooser=new SaveFileDialog{Filter="Проект APK|*.s3project",Title="Сохранить планы в новую копию проекта",FileName=Path.GetFileNameWithoutExtension(originalPath)+"-plans.s3project",OverwritePrompt=false})
                         {
-                            if(project==null||fingerprint!=BridgeValues.ProjectFingerprint(project)||!String.Equals(originalPath,projectPath,StringComparison.OrdinalIgnoreCase))
-                                throw new InvalidOperationException("Проект изменился. Откройте планы заново.");
-                            var updated=PortablePlans.Apply(project,dialog.Result);
-                            // Save first: failure must leave the currently served project untouched.
-                            ProjectFiles.Save(projectPath,updated);project=updated;
+                            if(chooser.ShowDialog(dialog)!=DialogResult.OK)return false;
+                            destination=chooser.FileName;
                         }
-                    });
-                    status.Text="Планы сохранены. В APK нажмите «Загрузить проект из Windows», затем «Открыть план» в карточке устройства.";
+                        saved=await Task.Run(()=>{
+                            // Read a fresh revision on each retry. Only fieldwork must match the editor's
+                            // baseline; preserve newer registration metadata in the current project.
+                            long currentRevision;registrations.ReadProjectSnapshot(out currentRevision);
+                            PlanSaveResult result=null;
+                            registrations.RunProjectMutation(currentRevision,delegate{
+                                lock(projectGuard)
+                                {
+                                    if(project==null||fingerprint!=BridgeValues.ProjectFingerprint(project)||!String.Equals(originalPath,projectPath,StringComparison.OrdinalIgnoreCase)||originalFields!=BridgeJson.Serialize(PortablePlans.Read(project)))
+                                        throw new InvalidOperationException("Проект или его планы изменились. Текущая расстановка оставлена в редакторе; повторите после проверки проекта.");
+                                    var updated=PortablePlans.Apply(project,fields);
+                                    result=ProjectFiles.SavePlans(destination,updated,copy);
+                                    project=updated;projectPath=result.Path;
+                                }
+                            });
+                            return result;
+                        });
+                        return true;
+                    };
+                    if(dialog.ShowDialog(this)!=DialogResult.OK)return;
+                    summary.Text=ProjectFiles.SummaryText(project)+"   •   "+Path.GetFileName(projectPath);
+                    status.Text=saved!=null&&saved.UsedNewCopy
+                        ?"Планы сохранены в новой копии, исходный файл занят: "+saved.Path+". В APK загрузите проект из Windows."
+                        :"Планы сохранены. В APK нажмите «Загрузить проект из Windows», затем «Открыть план» в карточке устройства.";
                 }
             });
         }
@@ -769,6 +791,13 @@ namespace StreletzBridge
             Validate(root);
             foreach (var record in Records(root)) record["description"] = ProjectPanelCatalog.EffectiveDescription(record);
             BridgeFiles.WriteNewAtomic(path, Serializer().Serialize(root));
+        }
+
+        internal static PlanSaveResult SavePlans(string path,Dictionary<string,object> root,bool newFile)
+        {
+            Validate(root);
+            foreach(var record in Records(root))record["description"]=ProjectPanelCatalog.EffectiveDescription(record);
+            return PlanProjectStorage.Save(path,Serializer().Serialize(root),newFile);
         }
 
         public static void Validate(Dictionary<string, object> root)

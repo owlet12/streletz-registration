@@ -47,6 +47,8 @@ namespace StreletzBridge
     internal sealed class PortablePlansDialog : Form
     {
         internal Dictionary<string, object> Result { get { return editor.State; } }
+        internal Func<Dictionary<string,object>,bool,Task<bool>> PersistAsync;
+        internal string LastSaveError {get;private set;}
         internal readonly PlanPlacement editor;
         internal readonly PlanCanvas canvas = new PlanCanvas();
         private readonly List<PlanDevice> devices;
@@ -56,6 +58,8 @@ namespace StreletzBridge
         private readonly DataGridView grid = new DataGridView();
         private readonly Label info = new Label(), count = new Label(), percent = new Label();
         private readonly Button add = new Button(), remove = new Button(), save = new Button(), place = new Button(), removePoint = new Button(), undo = new Button();
+        private readonly Button saveAs = new Button();
+        private readonly TextBox saveError = new TextBox();
         private readonly string initial;
         private string selectedId="";
         private bool busy, refreshing;
@@ -71,7 +75,9 @@ namespace StreletzBridge
             labels.Text="Подписи";labels.Checked=true;labels.AutoSize=true;labels.Margin=new Padding(10,10,0,0);
             header.Controls.AddRange(new Control[]{plans,add,remove,minus,percent,plus,fit,labels});
             var footer=new Panel{Dock=DockStyle.Bottom,Height=76,Padding=new Padding(12)};
-            Setup(save,"Сохранить планы",175);save.Dock=DockStyle.Right;info.Dock=DockStyle.Fill;info.Padding=new Padding(0,4,12,0);footer.Controls.Add(info);footer.Controls.Add(save);
+            Setup(save,"Сохранить планы",175);save.Dock=DockStyle.Right;Setup(saveAs,"Сохранить как…",155);saveAs.Dock=DockStyle.Right;
+            info.Dock=DockStyle.Fill;info.Padding=new Padding(0,4,12,0);footer.Controls.Add(info);footer.Controls.Add(saveAs);footer.Controls.Add(save);
+            saveError.Multiline=true;saveError.ReadOnly=true;saveError.ScrollBars=ScrollBars.Vertical;saveError.Dock=DockStyle.Bottom;saveError.Height=110;saveError.Visible=false;saveError.BackColor=Color.FromArgb(255,245,228);saveError.ForeColor=Color.FromArgb(120,48,0);
             var side=new Panel{Dock=DockStyle.Left,Width=345,Padding=new Padding(10,0,10,8)};
             var filters=new TableLayoutPanel{Dock=DockStyle.Top,Height=128,ColumnCount=1,RowCount=4};
             filters.Controls.Add(new Label{Text="Поиск: описание, адрес, зона",AutoSize=true});search.Dock=DockStyle.Fill;filters.Controls.Add(search);
@@ -87,7 +93,7 @@ namespace StreletzBridge
             grid.Columns.Add(new DataGridViewTextBoxColumn{Name="address",HeaderText="Адрес",Width=52,SortMode=DataGridViewColumnSortMode.NotSortable});
             grid.DefaultCellStyle.WrapMode=DataGridViewTriState.True;grid.AutoSizeRowsMode=DataGridViewAutoSizeRowsMode.AllCells;
             side.Controls.Add(grid);side.Controls.Add(commands);side.Controls.Add(filters);
-            canvas.Dock=DockStyle.Fill;Controls.Add(canvas);Controls.Add(side);Controls.Add(footer);Controls.Add(header);
+            canvas.Dock=DockStyle.Fill;Controls.Add(canvas);Controls.Add(side);Controls.Add(saveError);Controls.Add(footer);Controls.Add(header);
             plans.SelectedIndexChanged+=delegate{if(!refreshing)ShowSelected();};search.TextChanged+=delegate{RefreshDevices();};types.SelectedIndexChanged+=delegate{RefreshDevices();};unplaced.CheckedChanged+=delegate{RefreshDevices();};
             grid.SelectionChanged+=delegate{if(refreshing)return;selectedId=grid.SelectedRows.Count==0?"":(string)grid.SelectedRows[0].Tag;canvas.Select(selectedId);StopPlacement();UpdateButtons();};
             grid.CellDoubleClick+=(s,e)=>{if(e.RowIndex<0)return;var point=editor.Point(PlanId,selectedId);if(point!=null)canvas.FocusPoint(point);else BeginPlacement();};
@@ -98,9 +104,32 @@ namespace StreletzBridge
             place.Click+=delegate{if(canvas.Placing)StopPlacement();else BeginPlacement();};removePoint.Click+=delegate{RemovePoint();};
             undo.Click+=delegate{string id=PlanId;editor.Undo();RefreshPlans(id);};
             add.Click+=async delegate{await Add();};remove.Click+=delegate{RemovePlan();};
-            save.Click+=delegate{try{PortablePlans.Validate(Result);DialogResult=DialogResult.OK;Close();}catch(Exception e){Warn(e.Message);}};
+            save.Click+=async delegate{await Save(false);};saveAs.Click+=async delegate{await Save(true);};
             FormClosing+=(s,e)=>{if(busy){e.Cancel=true;return;}if(DialogResult!=DialogResult.OK&&initial!=BridgeJson.Serialize(Result)&&MessageBox.Show(this,"Закрыть без сохранения расстановки?","Несохранённые изменения",MessageBoxButtons.YesNo,MessageBoxIcon.Question)!=DialogResult.Yes)e.Cancel=true;};
             RefreshPlans("");
+        }
+        private async Task Save(bool copy)
+        {
+            if(busy)return;
+            LastSaveError="";saveError.Visible=false;
+            try
+            {
+                PortablePlans.Validate(Result);busy=true;UseWaitCursor=true;
+                foreach(Control control in Controls)control.Enabled=false;
+                // Do not dismiss until the project is durably saved and published by the bridge.
+                bool saved=PersistAsync==null?!copy:await PersistAsync(BridgeValues.Copy(Result),copy);
+                if(saved){busy=false;DialogResult=DialogResult.OK;Close();}
+            }
+            catch(Exception error)
+            {
+                LastSaveError=error is PlanSaveException?error.Message:"Сохранение не выполнено. Расстановка остаётся в редакторе. Повторите попытку или выберите «Сохранить как…».\r\n"+error.Message;
+                saveError.Text=LastSaveError;saveError.Visible=true;
+            }
+            finally
+            {
+                busy=false;UseWaitCursor=false;
+                if(!IsDisposed){foreach(Control control in Controls)control.Enabled=true;UpdateButtons();}
+            }
         }
         private static void Setup(Button b,string text,int width){b.Text=text;b.Width=width;b.Height=36;b.Margin=new Padding(0,0,6,0);}
         private string PlanId{get{var items=BridgeValues.Array(Result,"plans");return plans.SelectedIndex>=0&&plans.SelectedIndex<items.Length?BridgeValues.Text(items[plans.SelectedIndex] as Dictionary<string,object>,"id"):"";}}
@@ -156,10 +185,10 @@ namespace StreletzBridge
                     var name=new TextBox{Left=16,Top=15,Width=390,Text=Path.GetFileNameWithoutExtension(open.FileName),MaxLength=120};
                     var ok=new Button{Text="Добавить",Left=286,Top=55,Width=120,DialogResult=DialogResult.OK};title.Controls.AddRange(new Control[]{name,ok});title.AcceptButton=ok;
                     if(title.ShowDialog(this)!=DialogResult.OK)return;
-                    busy=true;add.Enabled=remove.Enabled=save.Enabled=plans.Enabled=grid.Enabled=place.Enabled=removePoint.Enabled=undo.Enabled=canvas.Enabled=false;UseWaitCursor=true;
+                    busy=true;add.Enabled=remove.Enabled=save.Enabled=saveAs.Enabled=plans.Enabled=grid.Enabled=place.Enabled=removePoint.Enabled=undo.Enabled=canvas.Enabled=false;UseWaitCursor=true;
                     try{byte[] image=await Task.Run(()=>PlanImage.Read(open.FileName));var next=PortablePlans.Add(Result,name.Text,image);editor.Replace(next);RefreshPlans(BridgeValues.Text(BridgeValues.Array(next,"plans").Last() as Dictionary<string,object>,"id"));}
                     catch(Exception e){Warn(e.Message);}
-                    finally{busy=false;UseWaitCursor=false;save.Enabled=plans.Enabled=grid.Enabled=canvas.Enabled=true;UpdateButtons();}
+                    finally{busy=false;UseWaitCursor=false;save.Enabled=saveAs.Enabled=plans.Enabled=grid.Enabled=canvas.Enabled=true;UpdateButtons();}
                 }
             }
         }
