@@ -32,7 +32,9 @@
     <Compile Include="BfxProjectUpdate.cs" />
     <Compile Include="ProjectSyncSnapshot.cs" />
     <Compile Include="PortablePlans.cs" />
+    <Compile Include="PlanPlacement.cs" />
     <Compile Include="PortablePlansDialog.cs" />
+    <Compile Include="PlanCanvas.cs" />
     <Compile Include="PanelRouteMetadata.cs" />
   </ItemGroup>
 </Project>

@@ -18,8 +18,8 @@ using System.Web.Script.Serialization;
 using System.Windows.Forms;
 using System.Xml;
 
-[assembly: AssemblyVersion("0.5.27.0")]
-[assembly: AssemblyFileVersion("0.5.27.0")]
+[assembly: AssemblyVersion("0.5.28.0")]
+[assembly: AssemblyFileVersion("0.5.28.0")]
 
 namespace StreletzBridge
 {
@@ -125,7 +125,7 @@ namespace StreletzBridge
                 driver, Path.Combine(stateDirectory, "registration-journal.json"), ProtocolV3.JournalIdentityKey(pairingCode),
                 savePanelCatalog: SavePanelCatalog);
             registrations.Changed += RefreshRegistrationStatus;
-            Text = "Стрелец · Мост для Windows · 0.5.27";
+            Text = "Стрелец · Мост для Windows · 0.5.28";
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(980, 620);
             Size = new Size(1280, 760);
@@ -431,7 +431,7 @@ namespace StreletzBridge
                 long revision;var baseline=registrations.ReadProjectSnapshot(out revision);
                 string originalPath;lock(projectGuard)originalPath=projectPath;
                 string fingerprint=BridgeValues.ProjectFingerprint(baseline);
-                using(var dialog=new PortablePlansDialog(PortablePlans.Read(baseline)))
+                using(var dialog=new PortablePlansDialog(PortablePlans.Read(baseline),baseline))
                 {
                     UseWaitCursor=false;
                     if(dialog.ShowDialog(this)!=DialogResult.OK)return;

@@ -46,38 +46,106 @@ namespace StreletzBridge
     }
     internal sealed class PortablePlansDialog : Form
     {
-        internal Dictionary<string, object> Result { get; private set; }
-        private readonly ListBox list = new ListBox();private readonly PictureBox preview = new PictureBox();private readonly Label info = new Label();
-        private readonly Button add = new Button(), remove = new Button(), save = new Button();
-        private bool busy;
-        internal PortablePlansDialog(Dictionary<string, object> state)
+        internal Dictionary<string, object> Result { get { return editor.State; } }
+        internal readonly PlanPlacement editor;
+        internal readonly PlanCanvas canvas = new PlanCanvas();
+        private readonly List<PlanDevice> devices;
+        private readonly ComboBox plans = new ComboBox(), types = new ComboBox();
+        private readonly TextBox search = new TextBox();
+        private readonly CheckBox unplaced = new CheckBox(), labels = new CheckBox();
+        private readonly DataGridView grid = new DataGridView();
+        private readonly Label info = new Label(), count = new Label(), percent = new Label();
+        private readonly Button add = new Button(), remove = new Button(), save = new Button(), place = new Button(), removePoint = new Button(), undo = new Button();
+        private readonly string initial;
+        private string selectedId="";
+        private bool busy, refreshing;
+        internal PortablePlansDialog(Dictionary<string, object> state, Dictionary<string, object> project)
         {
-            Result = BridgeValues.Copy(state);PortablePlans.Validate(Result);
-            Text = "Планы помещений · для APK";Font = new Font("Segoe UI", 10);Size = new Size(960, 680);MinimumSize = new Size(700, 500);StartPosition = FormStartPosition.CenterParent;
-            var header = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 58, Padding = new Padding(10), WrapContents = false };
-            add.Text = "Добавить PNG/JPEG";add.Width = 190;add.Height = 36;remove.Text = "Удалить план";remove.Width = 140;remove.Height = 36;header.Controls.AddRange(new Control[] { add, remove });
-            var footer = new Panel { Dock = DockStyle.Bottom, Height = 98, Padding = new Padding(12) };
-            info.Dock = DockStyle.Fill;info.Text = "В APK: «Загрузить проект из Windows» → карточка устройства → «Открыть план».\nРасставить устройства можно на телефоне. Местные планы в APK сохраняются при обновлении.";
-            save.Text = "Сохранить планы";save.Width = 165;save.Dock = DockStyle.Right;
-            footer.Controls.Add(info);footer.Controls.Add(save);
-            list.Dock = DockStyle.Left;list.Width = 240;list.IntegralHeight = false;list.SelectedIndexChanged += delegate { ShowSelected(); };
-            preview.Dock = DockStyle.Fill;preview.SizeMode = PictureBoxSizeMode.Zoom;preview.BackColor = Color.FromArgb(232, 239, 244);preview.Padding = new Padding(14);
-            Controls.Add(preview);Controls.Add(list);Controls.Add(footer);Controls.Add(header);
-            add.Click += async delegate { await Add(); };remove.Click += delegate { Remove(); };
-            save.Click += delegate { PortablePlans.Validate(Result);DialogResult = DialogResult.OK;Close(); };
-            FormClosing += (s,e) => { if(busy)e.Cancel=true; };
-            FormClosed += delegate { if(preview.Image!=null)preview.Image.Dispose(); };
-            RefreshList();
+            devices=PlanDevice.Read(project);editor=new PlanPlacement(state,devices);initial=BridgeJson.Serialize(Result);
+            Text="Планы помещений · расстановка устройств";Font=new Font("Segoe UI",10);Size=new Size(1250,800);MinimumSize=new Size(960,640);StartPosition=FormStartPosition.CenterParent;KeyPreview=true;
+            var header=new FlowLayoutPanel{Dock=DockStyle.Top,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Padding=new Padding(10),WrapContents=true};
+            plans.DropDownStyle=ComboBoxStyle.DropDownList;plans.Width=230;plans.Margin=new Padding(0,6,8,0);
+            Setup(add,"Добавить PNG/JPEG",180);Setup(remove,"Удалить план",125);
+            var minus=new Button();var plus=new Button();var fit=new Button();Setup(minus,"−",40);Setup(plus,"+",40);Setup(fit,"Весь план",100);
+            percent.Text="100%";percent.Width=52;percent.Height=36;percent.TextAlign=ContentAlignment.MiddleCenter;
+            labels.Text="Подписи";labels.Checked=true;labels.AutoSize=true;labels.Margin=new Padding(10,10,0,0);
+            header.Controls.AddRange(new Control[]{plans,add,remove,minus,percent,plus,fit,labels});
+            var footer=new Panel{Dock=DockStyle.Bottom,Height=76,Padding=new Padding(12)};
+            Setup(save,"Сохранить планы",175);save.Dock=DockStyle.Right;info.Dock=DockStyle.Fill;info.Padding=new Padding(0,4,12,0);footer.Controls.Add(info);footer.Controls.Add(save);
+            var side=new Panel{Dock=DockStyle.Left,Width=345,Padding=new Padding(10,0,10,8)};
+            var filters=new TableLayoutPanel{Dock=DockStyle.Top,Height=128,ColumnCount=1,RowCount=4};
+            filters.Controls.Add(new Label{Text="Поиск: описание, адрес, зона",AutoSize=true});search.Dock=DockStyle.Fill;filters.Controls.Add(search);
+            types.DropDownStyle=ComboBoxStyle.DropDownList;types.Dock=DockStyle.Fill;types.Items.Add("Все типы");foreach(string type in devices.Select(d=>d.Type).Where(t=>t.Length>0).Distinct().OrderBy(t=>t))types.Items.Add(type);types.SelectedIndex=0;filters.Controls.Add(types);
+            unplaced.Text="Только без отметки на этом плане";unplaced.AutoSize=true;filters.Controls.Add(unplaced);
+            var commands=new FlowLayoutPanel{Dock=DockStyle.Bottom,Height=158,FlowDirection=FlowDirection.TopDown,WrapContents=false};
+            count.Width=320;count.Height=22;Setup(place,"Разместить выбранное устройство",315);Setup(removePoint,"Убрать отметку",185);Setup(undo,"Отменить последнее изменение",315);
+            var row=new FlowLayoutPanel{Width=320,Height=39,Margin=Padding.Empty};row.Controls.Add(removePoint);
+            commands.Controls.AddRange(new Control[]{count,place,row,undo});
+            grid.Dock=DockStyle.Fill;grid.ReadOnly=true;grid.AllowUserToAddRows=false;grid.AllowUserToDeleteRows=false;grid.AllowUserToResizeRows=false;grid.RowHeadersVisible=false;grid.MultiSelect=false;grid.SelectionMode=DataGridViewSelectionMode.FullRowSelect;grid.BackgroundColor=Color.White;grid.AutoGenerateColumns=false;grid.BorderStyle=BorderStyle.FixedSingle;
+            grid.Columns.Add(new DataGridViewTextBoxColumn{Name="mark",HeaderText="",Width=28,SortMode=DataGridViewColumnSortMode.NotSortable});
+            grid.Columns.Add(new DataGridViewTextBoxColumn{Name="device",HeaderText="Описание / устройство",AutoSizeMode=DataGridViewAutoSizeColumnMode.Fill,SortMode=DataGridViewColumnSortMode.NotSortable});
+            grid.Columns.Add(new DataGridViewTextBoxColumn{Name="address",HeaderText="Адрес",Width=52,SortMode=DataGridViewColumnSortMode.NotSortable});
+            grid.DefaultCellStyle.WrapMode=DataGridViewTriState.True;grid.AutoSizeRowsMode=DataGridViewAutoSizeRowsMode.AllCells;
+            side.Controls.Add(grid);side.Controls.Add(commands);side.Controls.Add(filters);
+            canvas.Dock=DockStyle.Fill;Controls.Add(canvas);Controls.Add(side);Controls.Add(footer);Controls.Add(header);
+            plans.SelectedIndexChanged+=delegate{if(!refreshing)ShowSelected();};search.TextChanged+=delegate{RefreshDevices();};types.SelectedIndexChanged+=delegate{RefreshDevices();};unplaced.CheckedChanged+=delegate{RefreshDevices();};
+            grid.SelectionChanged+=delegate{if(refreshing)return;selectedId=grid.SelectedRows.Count==0?"":(string)grid.SelectedRows[0].Tag;canvas.Select(selectedId);StopPlacement();UpdateButtons();};
+            grid.CellDoubleClick+=(s,e)=>{if(e.RowIndex<0)return;var point=editor.Point(PlanId,selectedId);if(point!=null)canvas.FocusPoint(point);else BeginPlacement();};
+            canvas.SelectRecord=id=>{selectedId=id;SelectGridRow();canvas.Select(id);StopPlacement();UpdateButtons();};
+            canvas.PlaceRecord=(id,x,y)=>{try{editor.Place(PlanId,id,x,y);StopPlacement();RefreshDevices();canvas.UpdatePoints(editor.Plan(PlanId));UpdateButtons();info.Text="Отметка изменена. Нажмите «Сохранить планы», чтобы передать её в APK.";}catch(Exception e){Warn(e.Message);}};
+            canvas.ChangedScale=()=>percent.Text=Math.Round(canvas.Viewport.Zoom*100)+"%";canvas.CancelPlacement=StopPlacement;
+            minus.Click+=delegate{canvas.Zoom(.8);};plus.Click+=delegate{canvas.Zoom(1.25);};fit.Click+=delegate{canvas.Fit();};labels.CheckedChanged+=delegate{canvas.ShowLabels=labels.Checked;canvas.Invalidate();};
+            place.Click+=delegate{if(canvas.Placing)StopPlacement();else BeginPlacement();};removePoint.Click+=delegate{RemovePoint();};
+            undo.Click+=delegate{string id=PlanId;editor.Undo();RefreshPlans(id);};
+            add.Click+=async delegate{await Add();};remove.Click+=delegate{RemovePlan();};
+            save.Click+=delegate{try{PortablePlans.Validate(Result);DialogResult=DialogResult.OK;Close();}catch(Exception e){Warn(e.Message);}};
+            FormClosing+=(s,e)=>{if(busy){e.Cancel=true;return;}if(DialogResult!=DialogResult.OK&&initial!=BridgeJson.Serialize(Result)&&MessageBox.Show(this,"Закрыть без сохранения расстановки?","Несохранённые изменения",MessageBoxButtons.YesNo,MessageBoxIcon.Question)!=DialogResult.Yes)e.Cancel=true;};
+            RefreshPlans("");
         }
-        private Dictionary<string, object> Selected(){var plans=BridgeValues.Array(Result,"plans");return list.SelectedIndex>=0&&list.SelectedIndex<plans.Length?plans[list.SelectedIndex] as Dictionary<string,object>:null;}
-        private void RefreshList(){list.Items.Clear();foreach(var p in BridgeValues.Array(Result,"plans"))list.Items.Add(BridgeValues.Text(p as Dictionary<string,object>,"name"));if(list.Items.Count>0)list.SelectedIndex=list.Items.Count-1;else ShowSelected();}
+        private static void Setup(Button b,string text,int width){b.Text=text;b.Width=width;b.Height=36;b.Margin=new Padding(0,0,6,0);}
+        private string PlanId{get{var items=BridgeValues.Array(Result,"plans");return plans.SelectedIndex>=0&&plans.SelectedIndex<items.Length?BridgeValues.Text(items[plans.SelectedIndex] as Dictionary<string,object>,"id"):"";}}
+        private void RefreshPlans(string id)
+        {
+            refreshing=true;plans.Items.Clear();int index=0;foreach(var value in BridgeValues.Array(Result,"plans")){var p=(Dictionary<string,object>)value;if(BridgeValues.Text(p,"id")==id)index=plans.Items.Count;plans.Items.Add(BridgeValues.Text(p,"name"));}
+            if(plans.Items.Count>0)plans.SelectedIndex=index;refreshing=false;ShowSelected();
+        }
         private void ShowSelected()
         {
-            if(preview.Image!=null){preview.Image.Dispose();preview.Image=null;}var plan=Selected();remove.Enabled=plan!=null&&!busy;add.Enabled=list.Items.Count<PortablePlans.MaxPlans&&!busy;
-            if(plan==null)return;
-            try{preview.Image=PlanImage.Preview(BridgeValues.Text(plan,"image"));}
-            catch(Exception){info.Text="Изображение повреждено. Можно удалить этот план и добавить исправленный PNG/JPEG.";}
+            StopPlacement();var plan=editor.Plan(PlanId);Image image=null;
+            try{if(plan!=null)image=PlanImage.Preview(BridgeValues.Text(plan,"image"));}
+            catch(Exception){info.Text="Изображение повреждено. Удалите план и добавьте PNG/JPEG.";}
+            canvas.SetPlan(image,plan,devices);RefreshDevices();UpdateButtons();
         }
+        private void RefreshDevices()
+        {
+            if(refreshing)return;refreshing=true;grid.Rows.Clear();string type=types.SelectedIndex<=0?"":(string)types.SelectedItem;int total=0;
+            foreach(var device in devices)
+            {
+                bool has=editor.Point(PlanId,device.Id)!=null;if(has)total++;
+                if(!device.Matches(search.Text.Trim(),type)||(unplaced.Checked&&has))continue;
+                int row=grid.Rows.Add(has?"●":"",device.Label+"\n"+device.Type+" · зона "+device.Zone,device.Address);
+                grid.Rows[row].Tag=device.Id;grid.Rows[row].Cells[1].ToolTipText=device.Label+"\n"+device.Name+" · зона "+device.Zone;
+            }
+            grid.ClearSelection();SelectGridRow();refreshing=false;count.Text="На плане: "+total+" / "+devices.Count+" · в списке: "+grid.Rows.Count;UpdateButtons();
+        }
+        private void SelectGridRow()
+        {
+            bool old=refreshing;refreshing=true;grid.ClearSelection();foreach(DataGridViewRow row in grid.Rows)if(String.Equals((string)row.Tag,selectedId,StringComparison.OrdinalIgnoreCase)){row.Selected=true;grid.FirstDisplayedScrollingRowIndex=row.Index;break;}refreshing=old;
+        }
+        private void UpdateButtons()
+        {
+            bool exists=devices.Any(d=>String.Equals(d.Id,selectedId,StringComparison.OrdinalIgnoreCase));place.Enabled=!busy&&canvas.HasImage&&exists;
+            removePoint.Enabled=!busy&&editor.Point(PlanId,selectedId)!=null;undo.Enabled=!busy&&editor.CanUndo;add.Enabled=!busy&&plans.Items.Count<PortablePlans.MaxPlans;remove.Enabled=!busy&&plans.Items.Count>0;
+        }
+        private void StopPlacement(){canvas.Placing=false;canvas.Cursor=Cursors.Default;place.Text="Разместить выбранное устройство";info.Text="Колесо — масштаб · пустое место — перемещение плана · отметку можно перетащить.\nПосле сохранения в APK: «Загрузить проект из Windows».";}
+        private void BeginPlacement(){if(!place.Enabled)return;canvas.Placing=true;canvas.Cursor=Cursors.Cross;place.Text="Отменить размещение (Esc)";var d=devices.FirstOrDefault(v=>v.Id==selectedId);info.Text="Нажмите место на плане: "+(d==null?selectedId:d.Label);canvas.Focus();}
+        private void RemovePoint()
+        {
+            if(editor.Point(PlanId,selectedId)==null)return;
+            if(MessageBox.Show(this,"Убрать выбранную отметку с этого плана? Устройство останется в проекте.","Убрать отметку",MessageBoxButtons.YesNo,MessageBoxIcon.Question)!=DialogResult.Yes)return;
+            editor.Remove(PlanId,selectedId);canvas.UpdatePoints(editor.Plan(PlanId));RefreshDevices();StopPlacement();UpdateButtons();
+        }
+        private void Warn(string text){MessageBox.Show(this,text,"Планы помещений",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
         private async Task Add()
         {
             using(var open=new OpenFileDialog{Filter="Планы PNG/JPEG|*.png;*.jpg;*.jpeg",Title="Выберите план этажа"})
@@ -88,18 +156,18 @@ namespace StreletzBridge
                     var name=new TextBox{Left=16,Top=15,Width=390,Text=Path.GetFileNameWithoutExtension(open.FileName),MaxLength=120};
                     var ok=new Button{Text="Добавить",Left=286,Top=55,Width=120,DialogResult=DialogResult.OK};title.Controls.AddRange(new Control[]{name,ok});title.AcceptButton=ok;
                     if(title.ShowDialog(this)!=DialogResult.OK)return;
-                    busy=true;add.Enabled=remove.Enabled=save.Enabled=list.Enabled=false;UseWaitCursor=true;
-                    try{byte[] image=await Task.Run(()=>PlanImage.Read(open.FileName));Result=PortablePlans.Add(Result,name.Text,image);RefreshList();}
-                    catch(Exception e){MessageBox.Show(this,e.Message,"План не добавлен",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
-                    finally{busy=false;UseWaitCursor=false;save.Enabled=list.Enabled=true;add.Enabled=list.Items.Count<PortablePlans.MaxPlans;remove.Enabled=list.SelectedIndex>=0;}
+                    busy=true;add.Enabled=remove.Enabled=save.Enabled=plans.Enabled=grid.Enabled=place.Enabled=removePoint.Enabled=undo.Enabled=canvas.Enabled=false;UseWaitCursor=true;
+                    try{byte[] image=await Task.Run(()=>PlanImage.Read(open.FileName));var next=PortablePlans.Add(Result,name.Text,image);editor.Replace(next);RefreshPlans(BridgeValues.Text(BridgeValues.Array(next,"plans").Last() as Dictionary<string,object>,"id"));}
+                    catch(Exception e){Warn(e.Message);}
+                    finally{busy=false;UseWaitCursor=false;save.Enabled=plans.Enabled=grid.Enabled=canvas.Enabled=true;UpdateButtons();}
                 }
             }
         }
-        private void Remove()
+        private void RemovePlan()
         {
-            var plan=Selected();if(plan==null)return;
+            if(PlanId.Length==0)return;
             if(MessageBox.Show(this,"Удалить план и его отметки из Windows-проекта? Устройства останутся. Уже загруженную копию в APK удалите отдельно.","Удалить план",MessageBoxButtons.YesNo,MessageBoxIcon.Question)!=DialogResult.Yes)return;
-            Result=PortablePlans.Remove(Result,BridgeValues.Text(plan,"id"));RefreshList();
+            editor.Replace(PortablePlans.Remove(Result,PlanId));RefreshPlans("");
         }
     }
 }

@@ -20,6 +20,25 @@ final class FloorPlanSelfTest {
         Fieldwork.putPoint(state,"a","dev",.1,.1);check(Fieldwork.plansForRecord(state,"dev").length()==2);Fieldwork.removePoint(state,"b","dev");check(Fieldwork.plansForRecord(state,"dev").length()==1);
         String before=state.toString();try{Fieldwork.putPoint(state,"a","dev",Double.NaN,.5);throw new AssertionError();}catch(java.io.IOException expected){}check(before.equals(state.toString()));
         Fieldwork.read(state.toString());String fixture=System.getenv("STRELETZ_PLAN_TEST_OUTPUT");if(fixture!=null){JSONObject windows=new JSONObject(Files.readString(Path.of(fixture)));JSONObject imported=Fieldwork.forProject(Fieldwork.read(windows.getJSONObject("fieldwork").toString()),windows);check(imported.getJSONArray("plans").getJSONObject(0).getJSONArray("points").getJSONObject(0).getString("recordId").equals("fixture-device"));check(imported.getJSONArray("scans").length()==1);}
-        System.out.println("PASS FloorPlan: "+checks+" checks; zoom/focus/clamp/inverse placement, device lookup, multi-plan routing and Windows fixture import");
+        JSONObject project=new JSONObject().put("records",new JSONArray().put(new JSONObject().put("id","dev")));
+        JSONObject baseline=Fieldwork.empty();baseline.getJSONArray("plans").put(new JSONObject().put("id","floor").put("name","Floor").put("image","AQID").put("points",new JSONArray()));
+        JSONObject incoming=new JSONObject(baseline.toString());Fieldwork.putPoint(incoming,"floor","dev",.3,.4);int[] conflicts={0};
+        JSONObject merged=Fieldwork.merge(baseline,incoming,project,baseline,conflicts);check(Fieldwork.plansForRecord(merged,"dev").length()==1);check(conflicts[0]==0);check(baseline.getJSONArray("plans").getJSONObject(0).getJSONArray("points").length()==0);
+        JSONObject remoteMoved=new JSONObject(incoming.toString());Fieldwork.putPoint(remoteMoved,"floor","dev",.8,.6);
+        JSONObject moved=Fieldwork.merge(merged,remoteMoved,project,incoming,conflicts);near((float)moved.getJSONArray("plans").getJSONObject(0).getJSONArray("points").getJSONObject(0).getDouble("x"),.8f);check(conflicts[0]==0);
+        JSONObject localMoved=new JSONObject(incoming.toString());Fieldwork.putPoint(localMoved,"floor","dev",.1,.1);
+        merged=Fieldwork.merge(localMoved,remoteMoved,project,incoming,conflicts);near((float)merged.getJSONArray("plans").getJSONObject(0).getJSONArray("points").getJSONObject(0).getDouble("x"),.1f);check(conflicts[0]==1);
+        conflicts[0]=0;merged=Fieldwork.merge(localMoved,incoming,project,incoming,conflicts);check(conflicts[0]==0);near((float)merged.getJSONArray("plans").getJSONObject(0).getJSONArray("points").getJSONObject(0).getDouble("x"),.1f);
+        JSONObject removed=new JSONObject(remoteMoved.toString());Fieldwork.removePoint(removed,"floor","dev");merged=Fieldwork.merge(moved,removed,project,remoteMoved,conflicts);check(Fieldwork.plansForRecord(merged,"dev").length()==0);
+        merged=Fieldwork.merge(localMoved,remoteMoved,project,null,conflicts);check(conflicts[0]==1);near((float)merged.getJSONArray("plans").getJSONObject(0).getJSONArray("points").getJSONObject(0).getDouble("x"),.1f);
+        conflicts[0]=0;Fieldwork.merge(remoteMoved,remoteMoved,project,incoming,conflicts);check(conflicts[0]==0);
+        JSONObject firstLoad=Fieldwork.merge(Fieldwork.empty(),incoming,project,null,conflicts);check(firstLoad.getJSONArray("plans").getJSONObject(0).optString("_importedPlanDigest").length()==64);
+        JSONObject afterRestart=Fieldwork.merge(firstLoad,remoteMoved,project,null,conflicts);near((float)afterRestart.getJSONArray("plans").getJSONObject(0).getJSONArray("points").getJSONObject(0).getDouble("x"),.8f);check(conflicts[0]==0);
+        JSONObject editedPhone=new JSONObject(firstLoad.toString());Fieldwork.putPoint(editedPhone,"floor","dev",.2,.2);
+        Fieldwork.merge(editedPhone,incoming,project,null,conflicts);check(conflicts[0]==0);
+        JSONObject conflictAfterRestart=Fieldwork.merge(editedPhone,remoteMoved,project,null,conflicts);check(conflicts[0]==1);near((float)conflictAfterRestart.getJSONArray("plans").getJSONObject(0).getJSONArray("points").getJSONObject(0).getDouble("x"),.2f);
+        JSONObject editedWindows=new JSONObject(firstLoad.toString());Fieldwork.putPoint(editedWindows,"floor","dev",.9,.9);conflicts[0]=0;
+        JSONObject roundTrip=Fieldwork.merge(firstLoad,editedWindows,project,null,conflicts);near((float)roundTrip.getJSONArray("plans").getJSONObject(0).getJSONArray("points").getJSONObject(0).getDouble("x"),.9f);check(conflicts[0]==0);
+        System.out.println("PASS FloorPlan: "+checks+" checks; zoom/focus/clamp/inverse placement, device lookup, Windows import, clean updates, removals and local conflict preservation");
     }
 }

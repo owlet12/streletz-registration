@@ -86,13 +86,47 @@ final class Fieldwork {
         return copy;
     }
     static JSONObject merge(JSONObject local,JSONObject incoming,JSONObject project) throws Exception {
+        return merge(local,incoming,project,null,null);
+    }
+    // The previous downloaded project is the baseline, never the edited local journal.
+    // Replace only a plan unchanged on this phone; concurrent edits remain local.
+    static JSONObject merge(JSONObject local,JSONObject incoming,JSONObject project,JSONObject baseline,int[] conflicts) throws Exception {
         JSONObject result=read(local.toString());
         JSONArray a=incoming.getJSONArray("scans"),dest=result.getJSONArray("scans");
         Set<String> ids=new HashSet<>();for(int i=0;i<dest.length();i++)ids.add(dest.getJSONObject(i).getString("id"));
         for(int i=0;i<a.length();i++)if(ids.add(a.getJSONObject(i).getString("id")))dest.put(new JSONObject(a.getJSONObject(i).toString()));
         JSONArray plans=result.getJSONArray("plans"),other=incoming.getJSONArray("plans");ids.clear();
         for(int i=0;i<plans.length();i++)ids.add(plans.getJSONObject(i).getString("id"));
-        for(int i=0;i<other.length();i++)if(ids.add(other.getJSONObject(i).getString("id")))plans.put(new JSONObject(other.getJSONObject(i).toString()));
+        for(int i=0;i<other.length();i++){
+            JSONObject remote=other.getJSONObject(i);String id=remote.getString("id");
+            if(ids.add(id)){plans.put(importedPlan(remote));continue;}
+            for(int n=0;n<plans.length();n++)if(id.equals(plans.getJSONObject(n).getString("id"))){
+                JSONObject here=plans.getJSONObject(n),before=null;
+                JSONArray old=baseline==null?null:baseline.optJSONArray("plans");
+                if(old!=null)for(int k=0;k<old.length();k++)if(id.equals(old.getJSONObject(k).optString("id"))){before=old.getJSONObject(k);break;}
+                String localDigest=planDigest(here),remoteDigest=planDigest(remote),accepted=here.optString("_importedPlanDigest");
+                if(localDigest.equals(remoteDigest)){here.put("_importedPlanDigest",remoteDigest);break;}
+                if(localDigest.equals(accepted)||(before!=null&&samePlan(here,before)))plans.put(n,importedPlan(remote));
+                else if(conflicts!=null&&conflicts.length>0&&!remoteDigest.equals(accepted)&&(before==null||!samePlan(before,remote)))conflicts[0]++;
+                break;
+            }
+        }
         return forProject(result,project);
+    }
+    private static JSONObject importedPlan(JSONObject plan)throws Exception{return new JSONObject(plan.toString()).put("_importedPlanDigest",planDigest(plan));}
+    private static boolean samePlan(JSONObject a,JSONObject b)throws Exception{return planDigest(a).equals(planDigest(b));}
+    private static String planDigest(JSONObject plan)throws Exception{
+        JSONObject content=new JSONObject(plan.toString());content.remove("_importedPlanDigest");
+        byte[] bytes=java.security.MessageDigest.getInstance("SHA-256").digest(canonical(content).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        char[] hex="0123456789abcdef".toCharArray();StringBuilder text=new StringBuilder(64);for(byte value:bytes)text.append(hex[(value&255)>>>4]).append(hex[value&15]);return text.toString();
+    }
+    private static String canonical(Object value)throws Exception{
+        if(value instanceof JSONObject){JSONObject object=(JSONObject)value;List<String> keys=new ArrayList<>();Iterator<String> it=object.keys();while(it.hasNext())keys.add(it.next());Collections.sort(keys);
+            StringBuilder s=new StringBuilder("{");for(String key:keys)s.append(JSONObject.quote(key)).append(':').append(canonical(object.get(key))).append(',');return s.append('}').toString();}
+        if(value instanceof JSONArray){JSONArray array=(JSONArray)value;StringBuilder s=new StringBuilder("[");for(int i=0;i<array.length();i++)s.append(canonical(array.get(i))).append(',');return s.append(']').toString();}
+        if(value instanceof Number)return Double.toString(((Number)value).doubleValue());
+        if(value==null||value==JSONObject.NULL)return "null";
+        if(value instanceof Boolean)return value.toString();
+        return JSONObject.quote(String.valueOf(value));
     }
 }

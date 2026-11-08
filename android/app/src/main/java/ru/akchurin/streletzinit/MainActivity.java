@@ -1140,6 +1140,7 @@ public class MainActivity extends Activity {
         Map<String, Object> history = historicalJournalUpdates();
         ProjectViewState view = new ProjectViewState();
         final boolean[] changedProject = {false};
+        final int[] planConflicts = {0};
         runFileWork("Сохранение проекта", () -> {
             JSONObject incoming = reader.read();
             String fingerprint = ProjectTransfer.fingerprint(incoming);
@@ -1157,7 +1158,8 @@ public class MainActivity extends Activity {
             for(String id:ImportPreview.rows(incoming).keySet())if(priorIds.contains(id)){keptFields=oldFields;break;}
             String existingFields=(String)oldJournal.get(Fieldwork.key(fingerprint));
             if(existingFields!=null)keptFields=Fieldwork.read(existingFields);
-            updates.put(Fieldwork.key(fingerprint),Fieldwork.merge(keptFields,incomingFields,incoming).toString());
+            JSONObject planBaseline=previousFingerprint.equals(fingerprint)?previous.optJSONObject("fieldwork"):null;
+            updates.put(Fieldwork.key(fingerprint),Fieldwork.merge(keptFields,incomingFields,incoming,planBaseline,planConflicts).toString());
             if (!previousWasWaiting) archiveProject(ProjectTransfer.archiveFile(getFilesDir(), previousFingerprint),
                     ProjectDocuments.portable(previous, frozenJournal.build()));
             ProjectTransaction.install(new File(getFilesDir(), PROJECT_FILE), incoming.toString(), oldJournal, oldBridge, () -> {
@@ -1186,6 +1188,9 @@ public class MainActivity extends Activity {
         }, error -> {
             if (!projectStateUncertain) view.restore(error == null && changedProject[0]);
             finished.accept(error);
+            if(error==null&&planConflicts[0]>0&&!destroyed)new AlertDialog.Builder(this).setTitle("Расстановка сохранена на телефоне")
+                .setMessage("Планы с разными правками на телефоне и в Windows: "+planConflicts[0]+". Для них оставлена местная расстановка. Чтобы принять вариант Windows, сначала экспортируйте местный проект, затем удалите нужный план на телефоне и снова загрузите проект из Windows.")
+                .setPositiveButton("Понятно",null).show();
         });
     }
 
